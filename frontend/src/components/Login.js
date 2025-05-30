@@ -73,6 +73,21 @@ const Login = () => {
   const initializeGoogleSignIn = () => {
     if (window.google) {
       try {
+        // Dynamically determine the correct redirect URI based on current domain
+        const currentOrigin = window.location.origin;
+        let redirectUri;
+        
+        // Set redirect URI based on the current domain
+        if (currentOrigin.includes('ragzy.onrender.com')) {
+          redirectUri = 'https://ragzy.onrender.com';
+        } else if (currentOrigin.includes('ngrok-free.app') || currentOrigin.includes('ngrok.io')) {
+          redirectUri = currentOrigin;
+        } else {
+          redirectUri = 'http://localhost:3000';
+        }
+
+        console.log('Initializing Google OAuth with origin:', currentOrigin, 'redirect_uri:', redirectUri);
+
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           callback: handleCredentialResponse,
@@ -81,8 +96,11 @@ const Login = () => {
           context: 'signin',
           ux_mode: 'popup',
           use_fedcm_for_prompt: false,  // Disable FedCM for better compatibility
-          // Remove problematic origin configurations
           itp_support: true,
+          // Add the redirect URI to match current domain
+          redirect_uri: redirectUri,
+          // Ensure the origin matches
+          origin: currentOrigin
         });
 
         // Clear any existing button first
