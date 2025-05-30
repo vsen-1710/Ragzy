@@ -1,0 +1,23 @@
+# Ignore backend venv (outside)
+.venv/
+
+# Ignore Python stuff
+__pycache__/
+*.pyc
+
+# Ignore backend uploads/media
+backend/uploads/
+backend/media/
+
+# Ignore node_modules in frontend
+frontend/node_modules/
+
+# Ignore env files
+*.env
+backend/client_secret.json
+
+# Ignore venv in backend
+backend/venv/
+
+# Ignore venv in frontend
+frontend/venv/
