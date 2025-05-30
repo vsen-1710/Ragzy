@@ -655,11 +655,13 @@ function ChatPage() {
     }
     
     setLoading(true);
+    setError(''); // Clear any previous errors
     
     try {
       // If no conversation exists, create one first
       let currentConversationId = conversationId;
       if (!currentConversationId) {
+        console.log('No conversation ID, creating new conversation...');
         try {
           // Generate title using memory system if available
           const conversationTitle = memoryInitialized && userMessage ? 
@@ -675,6 +677,8 @@ function ChatPage() {
             }
           });
 
+          console.log('Conversation creation response:', newConvResponse.data);
+
           if (newConvResponse.data.success) {
             currentConversationId = newConvResponse.data.conversation.id;
             setConversationId(currentConversationId);
@@ -683,17 +687,20 @@ function ChatPage() {
             
             // Reload conversations in sidebar
             window.dispatchEvent(new CustomEvent('reloadConversations'));
+            console.log('New conversation created:', currentConversationId);
           } else {
-            throw new Error('Failed to create new conversation');
+            throw new Error(newConvResponse.data.error || 'Failed to create new conversation');
           }
         } catch (error) {
           console.error('Error creating new conversation:', error);
-          setUploadError('Failed to create conversation');
+          const errorMessage = error.response?.data?.error || error.message || 'Failed to create conversation';
+          setError(`Failed to create conversation: ${errorMessage}`);
           setLoading(false);
           return;
         }
       }
 
+      console.log('Sending message to conversation:', currentConversationId);
       let response;
       
       if (hasImage) {
@@ -721,6 +728,8 @@ function ChatPage() {
         });
       }
 
+      console.log('Message send response status:', response.status);
+
       if (!response.ok) {
         let errorData;
         try {
@@ -737,10 +746,27 @@ function ChatPage() {
           errorData: errorData
         });
         
-        throw new Error(errorData.error || `Failed to send message (${response.status})`);
+        const errorMessage = errorData.error || `Failed to send message (${response.status})`;
+        
+        // Check for specific error types
+        if (response.status === 401) {
+          setError('Authentication failed. Please log in again.');
+        } else if (response.status === 400 && errorMessage.includes('Conversation not found')) {
+          // Conversation was deleted or doesn't exist, clear it and retry
+          console.log('Conversation not found, clearing and retrying...');
+          setConversationId(null);
+          localStorage.removeItem('currentConversationId');
+          setError('Conversation not found. Please try sending your message again.');
+        } else {
+          setError(errorMessage);
+        }
+        
+        setLoading(false);
+        return;
       }
 
       const data = await response.json();
+      console.log('Message send successful:', data.success);
       
       if (data.success) {
         // Clear input and image
@@ -787,11 +813,12 @@ function ChatPage() {
         // Scroll to bottom
         setTimeout(scrollToBottom, 100);
       } else {
-        setUploadError(data.error || 'Failed to send message');
+        setError(data.error || 'Failed to send message');
       }
     } catch (error) {
       console.error('Error sending message:', error);
-      setUploadError(error.message || 'Failed to send message');
+      const errorMessage = error.message || 'Failed to send message';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
