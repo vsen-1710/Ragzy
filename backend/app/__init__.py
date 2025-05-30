@@ -52,7 +52,7 @@ def create_app(config_class=Config):
     CORS(app, 
          resources={
              r"/*": {
-                 "origins": ["http://localhost:3000"],
+                 "origins": "*",  # Allow all origins for now, we'll validate in the headers
                  "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                  "allow_headers": ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With", "Accept", "Origin"],
                  "supports_credentials": True,
@@ -67,22 +67,31 @@ def create_app(config_class=Config):
     # Add security headers
     @app.after_request
     def add_security_headers(response):
-        # More permissive headers for Google Sign-In
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin'
+        # Get the origin from the request
+        origin = request.headers.get('Origin')
         
-        # Remove restrictive Cross-Origin policies for OAuth
-        if '/auth/' in request.path:
-            # Don't set restrictive policies for auth endpoints
-            response.headers.pop('Cross-Origin-Opener-Policy', None)
-            response.headers.pop('Cross-Origin-Embedder-Policy', None)
-        else:
-            response.headers['Cross-Origin-Opener-Policy'] = 'same-origin-allow-popups'
-            response.headers['Cross-Origin-Embedder-Policy'] = 'credentialless'
-            
-        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        # Define allowed origins - prioritize localhost for development
+        allowed_origins = [
+            'http://localhost:3000',
+            'http://localhost:3001',
+            'http://127.0.0.1:3000',
+            'http://127.0.0.1:3001',
+            'https://ragzy.onrender.com'
+        ]
+        
+        # Set CORS headers for localhost development
+        if origin and origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Max-Age'] = '86400'
+        
+        # Security headers (simplified for local development)
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        
         return response
     
     # Handle OPTIONS requests
@@ -90,13 +99,38 @@ def create_app(config_class=Config):
     def handle_preflight():
         if request.method == "OPTIONS":
             response = make_response()
-            response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
+            
+            # Get the origin from the request
+            origin = request.headers.get('Origin')
+            
+            # Define allowed origins
+            allowed_origins = [
+                'http://localhost:3000',
+                'https://ragzy.onrender.com',
+                'http://localhost:3001'
+            ]
+            
+            # Check if origin is valid
+            origin_allowed = False
+            if origin:
+                if origin in allowed_origins:
+                    origin_allowed = True
+                elif '.ngrok.io' in origin or '.ngrok-free.app' in origin:
+                    origin_allowed = True
+            
+            # Set CORS headers
+            if origin_allowed and origin:
+                response.headers.add("Access-Control-Allow-Origin", origin)
+            else:
+                response.headers.add("Access-Control-Allow-Origin", "*")
+                
             response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin")
             response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
             response.headers.add("Access-Control-Allow-Credentials", "true")
             response.headers.add("Access-Control-Max-Age", "3600")
-            response.headers.add("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
-            response.headers.add("Cross-Origin-Embedder-Policy", "credentialless")
+            response.headers.add("Vary", "Origin")
+            
+            # Don't add restrictive Cross-Origin policies for preflight
             return response
     
     # Initialize extensions with app

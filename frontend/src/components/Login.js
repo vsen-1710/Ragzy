@@ -50,6 +50,21 @@ const Login = () => {
   const { login } = useAuth();
 
   useEffect(() => {
+    // Clear any cached ngrok URLs or invalid tokens
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (
+        key.includes('ngrok') ||
+        key.includes('ragzy.onrender.com') ||
+        localStorage.getItem(key)?.includes('ngrok') ||
+        localStorage.getItem(key)?.includes('ragzy.onrender.com')
+      )) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    
     // Trigger content animation after component mounts
     const timer = setTimeout(() => setShowContent(true), 300);
     
@@ -73,18 +88,9 @@ const Login = () => {
   const initializeGoogleSignIn = () => {
     if (window.google) {
       try {
-        // Dynamically determine the correct redirect URI based on current domain
+        // Use localhost for local development
         const currentOrigin = window.location.origin;
-        let redirectUri;
-        
-        // Set redirect URI based on the current domain
-        if (currentOrigin.includes('ragzy.onrender.com')) {
-          redirectUri = 'https://ragzy.onrender.com';
-        } else if (currentOrigin.includes('ngrok-free.app') || currentOrigin.includes('ngrok.io')) {
-          redirectUri = currentOrigin;
-        } else {
-          redirectUri = 'http://localhost:3000';
-        }
+        const redirectUri = 'http://localhost:3000';
 
         console.log('Initializing Google OAuth with origin:', currentOrigin, 'redirect_uri:', redirectUri);
 
@@ -97,7 +103,7 @@ const Login = () => {
           ux_mode: 'popup',
           use_fedcm_for_prompt: false,  // Disable FedCM for better compatibility
           itp_support: true,
-          // Add the redirect URI to match current domain
+          // Use localhost for redirect URI
           redirect_uri: redirectUri,
           // Ensure the origin matches
           origin: currentOrigin
@@ -137,6 +143,8 @@ const Login = () => {
       if (!response.credential) {
         throw new Error('No credential received from Google');
       }
+
+      console.log('Making request to:', `${API_CONFIG.BASE_URL}/auth/google`);
 
       const result = await fetch(`${API_CONFIG.BASE_URL}/auth/google`, {
         method: 'POST',

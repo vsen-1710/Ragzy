@@ -12,6 +12,38 @@ from ..models.user import UserModel
 # Change the URL prefix to match the frontend request
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
+def get_cors_origin():
+    """Get appropriate CORS origin based on request"""
+    origin = request.headers.get('Origin')
+    
+    if not origin:
+        return '*'
+    
+    allowed_origins = [
+        'http://localhost:3000',
+        'https://ragzy.onrender.com',
+        'http://localhost:3001'
+    ]
+    
+    # Check if origin is valid
+    if origin in allowed_origins:
+        return origin
+    elif '.ngrok.io' in origin or '.ngrok-free.app' in origin:
+        return origin
+    else:
+        return '*'  # Be more permissive
+
+def add_cors_headers(response):
+    """Add CORS headers to response"""
+    cors_origin = get_cors_origin()
+    response.headers.add("Access-Control-Allow-Origin", cors_origin)
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin")
+    response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    response.headers.add("Access-Control-Allow-Credentials", "true")
+    response.headers.add("Access-Control-Max-Age", "3600")
+    response.headers.add("Vary", "Origin")
+    return response
+
 def google_id_to_uuid(google_id: str) -> str:
     """Convert Google user ID to a deterministic UUID"""
     # Create a deterministic UUID from the Google ID using namespace UUID
@@ -35,13 +67,7 @@ def google_auth():
     """Verify Google ID token and create JWT"""
     if request.method == 'OPTIONS':
         response = make_response()
-        response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        response.headers.add("Access-Control-Allow-Credentials", "true")
-        response.headers.add("Access-Control-Max-Age", "3600")
-        response.headers.add("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
-        response.headers.add("Cross-Origin-Embedder-Policy", "credentialless")
+        add_cors_headers(response)
         return response
         
     try:
@@ -50,14 +76,18 @@ def google_auth():
         data = request.get_json()
         if not data or 'credential' not in data:
             current_app.logger.error("No credential provided in request")
-            return jsonify({'success': False, 'error': 'No credential provided'}), 400
+            response = make_response(jsonify({'success': False, 'error': 'No credential provided'}), 400)
+            response.headers['Content-Type'] = 'application/json'
+            return add_cors_headers(response)
         
         token = data['credential']
         client_id = load_google_credentials()
         
         if not client_id:
             current_app.logger.error("Google credentials not configured")
-            return jsonify({'success': False, 'error': 'Google credentials not configured'}), 500
+            response = make_response(jsonify({'success': False, 'error': 'Google credentials not configured'}), 500)
+            response.headers['Content-Type'] = 'application/json'
+            return add_cors_headers(response)
         
         current_app.logger.info(f"Verifying Google token with client_id: {client_id[:20]}...")
         
@@ -103,11 +133,15 @@ def google_auth():
                         user = UserModel.create_with_id(user_uuid, username=name, email=email, google_id=google_user_id)
                         if not user:
                             current_app.logger.error("Failed to create user - create_with_id returned None")
-                            return jsonify({'success': False, 'error': 'Failed to create user'}), 500
+                            response = make_response(jsonify({'success': False, 'error': 'Failed to create user'}), 500)
+                            response.headers['Content-Type'] = 'application/json'
+                            return add_cors_headers(response)
                         current_app.logger.info(f"Successfully created new user: {user.id}")
                     except Exception as create_error:
                         current_app.logger.error(f"Exception during user creation: {str(create_error)}")
-                        return jsonify({'success': False, 'error': f'Failed to create user: {str(create_error)}'}), 500
+                        response = make_response(jsonify({'success': False, 'error': f'Failed to create user: {str(create_error)}'}), 500)
+                        response.headers['Content-Type'] = 'application/json'
+                        return add_cors_headers(response)
             else:
                 current_app.logger.info(f"Found existing user with UUID: {user.id}")
             
@@ -126,7 +160,7 @@ def google_auth():
                 expires_delta=timedelta(days=7)  # Token valid for 7 days
             )
             
-            response = jsonify({
+            response = make_response(jsonify({
                 'success': True,
                 'access_token': access_token,
                 'user': {
@@ -135,7 +169,10 @@ def google_auth():
                     'name': user.username,
                     'picture': picture
                 }
-            })
+            }), 200)
+            
+            # Set content type explicitly
+            response.headers['Content-Type'] = 'application/json'
             
             # Set secure cookie with the token
             response.set_cookie(
@@ -149,23 +186,24 @@ def google_auth():
             )
             
             # Add CORS headers
-            response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
-            response.headers.add("Access-Control-Allow-Credentials", "true")
-            response.headers.add("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
-            response.headers.add("Cross-Origin-Embedder-Policy", "credentialless")
+            response = add_cors_headers(response)
             
             current_app.logger.info("Google authentication completed successfully")
             return response
             
         except ValueError as e:
             current_app.logger.error(f"Invalid Google token: {str(e)}")
-            return jsonify({'success': False, 'error': 'Invalid Google token'}), 401
+            response = make_response(jsonify({'success': False, 'error': 'Invalid Google token'}), 401)
+            response.headers['Content-Type'] = 'application/json'
+            return add_cors_headers(response)
             
     except Exception as e:
         current_app.logger.error(f"Error in Google authentication: {str(e)}")
         import traceback
         current_app.logger.error(f"Traceback: {traceback.format_exc()}")
-        return jsonify({'success': False, 'error': 'Authentication failed'}), 500
+        response = make_response(jsonify({'success': False, 'error': 'Authentication failed'}), 500)
+        response.headers['Content-Type'] = 'application/json'
+        return add_cors_headers(response)
 
 @auth_bp.route('/verify', methods=['GET', 'OPTIONS'])
 @jwt_required()
@@ -173,13 +211,7 @@ def verify_token():
     """Verify JWT token and return user info"""
     if request.method == 'OPTIONS':
         response = make_response()
-        response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        response.headers.add("Access-Control-Allow-Credentials", "true")
-        response.headers.add("Access-Control-Max-Age", "3600")
-        response.headers.add("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
-        response.headers.add("Cross-Origin-Embedder-Policy", "credentialless")
+        add_cors_headers(response)
         return response
 
     try:
@@ -217,10 +249,7 @@ def verify_token():
         })
         
         # Add CORS headers
-        response.headers.add("Access-Control-Allow-Origin", "http://localhost:3000")
-        response.headers.add("Access-Control-Allow-Credentials", "true")
-        response.headers.add("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
-        response.headers.add("Cross-Origin-Embedder-Policy", "credentialless")
+        response = add_cors_headers(response)
         
         return response
     except Exception as e:

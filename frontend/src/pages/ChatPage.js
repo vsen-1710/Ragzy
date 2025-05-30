@@ -17,7 +17,6 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
-  Paper
 } from '@mui/material';
 import {
   Send as SendIcon,
