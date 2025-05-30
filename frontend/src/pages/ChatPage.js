@@ -87,7 +87,14 @@ function ChatPage() {
   const [error, setError] = useState(null);
   const [conversationId, setConversationId] = useState(() => {
     try {
-      return localStorage.getItem('currentConversationId') || null;
+      const savedId = localStorage.getItem('currentConversationId');
+      // Ensure we don't use 'null' string or invalid values
+      if (savedId && savedId !== 'null' && savedId !== 'undefined') {
+        return savedId;
+      }
+      // Clear invalid values
+      localStorage.removeItem('currentConversationId');
+      return null;
     } catch (error) {
       console.error('Error loading conversationId from localStorage:', error);
       return null;
@@ -128,6 +135,19 @@ function ChatPage() {
   
   // File input ref
   const fileInputRef = useRef(null);
+
+  // Safe conversation ID setter
+  const setSafeConversationId = (id) => {
+    if (id && id !== 'null' && id !== 'undefined') {
+      console.log('Setting conversation ID to:', id);
+      setConversationId(id);
+      localStorage.setItem('currentConversationId', id);
+    } else {
+      console.log('Clearing conversation ID, invalid value:', id);
+      setConversationId(null);
+      localStorage.removeItem('currentConversationId');
+    }
+  };
 
   // Enhanced function to determine chat type and parent
   const determineChathierarchy = useCallback(async (convId) => {
@@ -668,6 +688,7 @@ function ChatPage() {
             generateConversationTitle([{ role: 'user', content: userMessage }]) : 
             "New Conversation";
 
+          console.log('Creating conversation with title:', conversationTitle);
           const newConvResponse = await axios.post(`${API_URL}/chat/conversations`, {
             title: conversationTitle
           }, {
@@ -679,17 +700,19 @@ function ChatPage() {
 
           console.log('Conversation creation response:', newConvResponse.data);
 
-          if (newConvResponse.data.success) {
+          if (newConvResponse.data.success && newConvResponse.data.conversation && newConvResponse.data.conversation.id) {
             currentConversationId = newConvResponse.data.conversation.id;
-            setConversationId(currentConversationId);
-            localStorage.setItem('currentConversationId', currentConversationId);
+            console.log('Extracted conversation ID:', currentConversationId);
+            
+            setSafeConversationId(currentConversationId);
             window.history.pushState({}, '', `/?conversation=${currentConversationId}`);
             
             // Reload conversations in sidebar
             window.dispatchEvent(new CustomEvent('reloadConversations'));
-            console.log('New conversation created:', currentConversationId);
+            console.log('New conversation created and set:', currentConversationId);
           } else {
-            throw new Error(newConvResponse.data.error || 'Failed to create new conversation');
+            console.error('Invalid conversation creation response:', newConvResponse.data);
+            throw new Error('Invalid response from server: ' + (newConvResponse.data.error || 'Missing conversation ID'));
           }
         } catch (error) {
           console.error('Error creating new conversation:', error);
@@ -698,6 +721,14 @@ function ChatPage() {
           setLoading(false);
           return;
         }
+      }
+
+      // Validate that we have a valid conversation ID before proceeding
+      if (!currentConversationId || currentConversationId === 'null') {
+        console.error('No valid conversation ID available:', currentConversationId);
+        setError('Failed to get conversation ID. Please try again.');
+        setLoading(false);
+        return;
       }
 
       console.log('Sending message to conversation:', currentConversationId);
@@ -754,8 +785,7 @@ function ChatPage() {
         } else if (response.status === 400 && errorMessage.includes('Conversation not found')) {
           // Conversation was deleted or doesn't exist, clear it and retry
           console.log('Conversation not found, clearing and retrying...');
-          setConversationId(null);
-          localStorage.removeItem('currentConversationId');
+          setSafeConversationId(null);
           setError('Conversation not found. Please try sending your message again.');
         } else {
           setError(errorMessage);
