@@ -152,16 +152,25 @@ const Login = () => {
         }),
       });
 
-      if (!result.ok) {
-        const errorData = await result.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error! status: ${result.status}`);
+      let data;
+      const contentType = result.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          data = await result.json();
+        } catch (jsonError) {
+          console.error('Failed to parse JSON response:', jsonError);
+          throw new Error('Invalid response from server');
+        }
+      } else {
+        throw new Error(`Unexpected response type: ${contentType}`);
       }
 
-      const data = await result.json();
+      if (!result.ok) {
+        throw new Error(data.error || `HTTP error! status: ${result.status}`);
+      }
 
       if (data.success && data.user && data.access_token) {
         await login(data.user, data.access_token);
-        // Don't force a reload, let React Router handle navigation
         console.log('Login successful, user authenticated');
       } else {
         throw new Error(data.error || 'Authentication failed');
