@@ -17,14 +17,27 @@ class RedisServiceOptimized:
         self.cache_ttl = 60 * 60  # 1 hour for general cache
         self.rate_limit_ttl = 60  # 1 minute for rate limiting
         
-        # Performance settings
-        self.message_batch_size = 100  # Increased batch size
-        self.pipeline_batch_size = 50
-        self.max_messages_per_conversation = 200  # Increased limit
+        # Enhanced performance settings
+        self.message_batch_size = 200  # Increased from 100
+        self.pipeline_batch_size = 100  # Increased from 50
+        self.max_messages_per_conversation = 500  # Increased from 200
+        self.compression_threshold = 1024  # Compress data larger than 1KB
         
         # Connection and threading
         self._lock = threading.RLock()
         self._pipeline_cache = {}
+        
+        # Enable Redis client optimizations
+        self.redis.set_response_callback('GET', self._deserialize_data)
+        self.redis.set_response_callback('MGET', lambda x: [self._deserialize_data(i) for i in x])
+        
+        # Configure Redis client for better performance
+        self.redis.config_set('maxmemory-policy', 'allkeys-lru')
+        self.redis.config_set('maxmemory-samples', '10')
+        self.redis.config_set('activedefrag', 'yes')
+        self.redis.config_set('lazyfree-lazy-eviction', 'yes')
+        self.redis.config_set('lazyfree-lazy-expire', 'yes')
+        self.redis.config_set('lazyfree-lazy-server-del', 'yes')
     
     @staticmethod
     def _with_error_handling(operation_name: str = "Redis operation"):
@@ -45,18 +58,36 @@ class RedisServiceOptimized:
         return f"pgpt:{hashlib.sha256(key.encode()).hexdigest()[:12]}"
     
     def _serialize_data(self, data: Any, use_pickle: bool = False) -> str:
-        """Optimized serialization with fallback options"""
+        """Enhanced serialization with compression for large data"""
         try:
             if use_pickle:
-                return pickle.dumps(data).hex()
-            return json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+                serialized = pickle.dumps(data)
+            else:
+                serialized = json.dumps(data, ensure_ascii=False, separators=(',', ':')).encode()
+            
+            # Compress if data is large enough
+            if len(serialized) > self.compression_threshold:
+                import zlib
+                compressed = zlib.compress(serialized)
+                return f"z:{compressed.hex()}"
+            
+            return serialized.hex() if use_pickle else serialized.decode()
         except (TypeError, ValueError):
             # Fallback to pickle for complex objects
             return pickle.dumps(data).hex()
     
     def _deserialize_data(self, data: str, use_pickle: bool = False) -> Any:
-        """Optimized deserialization with fallback options"""
+        """Enhanced deserialization with compression support"""
+        if not data:
+            return None
+            
         try:
+            # Check if data is compressed
+            if isinstance(data, bytes) and data.startswith(b'z:'):
+                import zlib
+                decompressed = zlib.decompress(bytes.fromhex(data[2:].decode()))
+                data = decompressed
+            
             if use_pickle or (len(data) % 2 == 0 and all(c in '0123456789abcdef' for c in data[:10])):
                 return pickle.loads(bytes.fromhex(data))
             return json.loads(data)
@@ -90,13 +121,22 @@ class RedisServiceOptimized:
         with self._lock:
             pipe = self.redis.pipeline(transaction=False)  # Non-transactional for better performance
             
+            # Group similar operations for better performance
+            grouped_ops = {}
             for op_data in operations:
                 if len(op_data) < 2:
                     continue
                     
                 op, *args = op_data
+                if op not in grouped_ops:
+                    grouped_ops[op] = []
+                grouped_ops[op].append(args)
+            
+            # Execute grouped operations
+            for op, args_list in grouped_ops.items():
                 if hasattr(pipe, op):
-                    getattr(pipe, op)(*args)
+                    for args in args_list:
+                        getattr(pipe, op)(*args)
             
             if execute_immediately:
                 return pipe.execute()
@@ -148,18 +188,21 @@ class RedisServiceOptimized:
     
     @_with_error_handling("Store message")
     def store_message(self, user_id: str, conversation_id: str, message: Dict) -> bool:
-        """Optimized message storage with enhanced pipeline operations"""
+        """Enhanced message storage with state tracking and real-time updates"""
         key = self.get_conversation_key(user_id, conversation_id)
         
-        # Enhanced message data with metadata
+        # Add message state tracking
         enhanced_message = {
             **message,
             'timestamp': message.get('timestamp', datetime.utcnow().isoformat()),
-            '_stored_at': datetime.utcnow().isoformat()
+            '_stored_at': datetime.utcnow().isoformat(),
+            '_state': message.get('_state', 'complete'),  # 'complete', 'partial', 'error'
+            '_version': '2.0'
         }
         
         message_data = self._serialize_data(enhanced_message)
         
+        # Use pipeline for atomic operations
         operations = [
             ('lpush', key, message_data),
             ('ltrim', key, 0, self.max_messages_per_conversation - 1),
@@ -168,7 +211,28 @@ class RedisServiceOptimized:
         
         result = self.pipeline_operation(operations)
         return bool(result and all(result))
-    
+
+    def update_message_state(self, user_id: str, conversation_id: str, message_id: str, 
+                           state: str, content: str = None) -> bool:
+        """Update message state and content in real-time"""
+        key = self.get_conversation_key(user_id, conversation_id)
+        messages = self.redis.lrange(key, 0, -1)
+        
+        for i, msg_data in enumerate(messages):
+            msg = self._deserialize_data(msg_data)
+            if msg and msg.get('id') == message_id:
+                # Update state and content if provided
+                msg['_state'] = state
+                if content is not None:
+                    msg['content'] = content
+                msg['_updated_at'] = datetime.utcnow().isoformat()
+                
+                # Replace the message
+                updated_data = self._serialize_data(msg)
+                self.redis.lset(key, i, updated_data)
+                return True
+        return False
+
     @_with_error_handling("Store messages batch")
     def store_messages_batch(self, user_id: str, conversation_id: str, messages: List[Dict]) -> bool:
         """Enhanced batch message storage with optimized processing"""
@@ -205,7 +269,7 @@ class RedisServiceOptimized:
     
     @_with_error_handling("Get conversation history")
     def get_conversation_history(self, user_id: str, conversation_id: str, limit: int = 50) -> List[Dict]:
-        """Enhanced conversation history retrieval with optimized performance"""
+        """Enhanced conversation history retrieval with state awareness"""
         key = self.get_conversation_key(user_id, conversation_id)
         
         # Optimize limit to prevent excessive memory usage
@@ -220,8 +284,11 @@ class RedisServiceOptimized:
             try:
                 message = self._deserialize_data(msg_data)
                 if message and isinstance(message, dict):
-                    # Remove internal fields
-                    clean_message = {k: v for k, v in message.items() if not k.startswith('_')}
+                    # Remove internal fields except state
+                    clean_message = {
+                        k: v for k, v in message.items() 
+                        if not k.startswith('_') or k == '_state'
+                    }
                     messages.append(clean_message)
             except Exception:
                 continue
@@ -590,9 +657,9 @@ class RedisServiceOptimized:
             return False
 
     def store_chat_hierarchy(self, main_chat_id: str, sub_chat_id: str, user_id: str) -> bool:
-        """Store chat hierarchy information in Redis"""
+        """Enhanced chat hierarchy storage with better relationship tracking"""
         try:
-            # Store main_chat -> sub_chats mapping
+            # Store main_chat -> sub_chats mapping with metadata
             main_chat_key = f"hierarchy:main:{main_chat_id}"
             sub_chats_data = self.redis.get(main_chat_key)
             
@@ -601,21 +668,41 @@ class RedisServiceOptimized:
             else:
                 sub_chats = []
             
-            if sub_chat_id not in sub_chats:
-                sub_chats.append(sub_chat_id)
-                self.redis.setex(
-                    main_chat_key, 
-                    self.conversation_ttl, 
-                    json.dumps(sub_chats)
-                )
+            # Add sub-chat with metadata
+            sub_chat_info = {
+                'id': sub_chat_id,
+                'created_at': datetime.utcnow().isoformat(),
+                'last_updated': datetime.utcnow().isoformat()
+            }
             
-            # Store sub_chat -> main_chat mapping
+            # Update or add sub-chat
+            sub_chat_exists = False
+            for i, chat in enumerate(sub_chats):
+                if chat.get('id') == sub_chat_id:
+                    sub_chats[i] = {**chat, 'last_updated': datetime.utcnow().isoformat()}
+                    sub_chat_exists = True
+                    break
+            
+            if not sub_chat_exists:
+                sub_chats.append(sub_chat_info)
+            
+            self.redis.setex(
+                main_chat_key, 
+                self.conversation_ttl, 
+                json.dumps(sub_chats)
+            )
+            
+            # Store sub_chat -> main_chat mapping with enhanced metadata
             sub_chat_key = f"hierarchy:sub:{sub_chat_id}"
             hierarchy_data = {
                 'main_chat_id': main_chat_id,
                 'user_id': user_id,
-                'created_at': datetime.utcnow().isoformat()
+                'created_at': datetime.utcnow().isoformat(),
+                'last_updated': datetime.utcnow().isoformat(),
+                'message_count': 0,
+                'last_message_at': None
             }
+            
             self.redis.setex(
                 sub_chat_key,
                 self.conversation_ttl,
@@ -715,6 +802,27 @@ class RedisServiceOptimized:
         except Exception as e:
             print(f"Error during cleanup: {str(e)}")
             return 0
+
+    def update_chat_metadata(self, chat_id: str, is_main: bool = False) -> bool:
+        """Update chat metadata with latest activity"""
+        try:
+            key = f"hierarchy:{'main' if is_main else 'sub'}:{chat_id}"
+            metadata = self.redis.get(key)
+            
+            if metadata:
+                data = json.loads(metadata)
+                data['last_updated'] = datetime.utcnow().isoformat()
+                
+                if not is_main:
+                    data['message_count'] = data.get('message_count', 0) + 1
+                    data['last_message_at'] = datetime.utcnow().isoformat()
+                
+                self.redis.setex(key, self.conversation_ttl, json.dumps(data))
+                return True
+            return False
+        except Exception as e:
+            print(f"Error updating chat metadata: {str(e)}")
+            return False
 
 # Maintain backward compatibility
 RedisService = RedisServiceOptimized

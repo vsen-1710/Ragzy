@@ -27,8 +27,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { API_CONFIG } from '../config/api';
 import { useAuth } from '../contexts/AuthContext';
-
-const GOOGLE_CLIENT_ID = '277424078739-o7lt5017vnv653bnptfp0hqkcl68bbt3.apps.googleusercontent.com';
+import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
   const [loading, setLoading] = useState(false);
@@ -48,23 +47,9 @@ const Login = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isTablet = useMediaQuery(theme.breakpoints.down('lg'));
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Clear any cached ngrok URLs or invalid tokens
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (
-        key.includes('ngrok') ||
-        key.includes('ragzy.onrender.com') ||
-        localStorage.getItem(key)?.includes('ngrok') ||
-        localStorage.getItem(key)?.includes('ragzy.onrender.com')
-      )) {
-        keysToRemove.push(key);
-      }
-    }
-    keysToRemove.forEach(key => localStorage.removeItem(key));
-    
     // Trigger content animation after component mounts
     const timer = setTimeout(() => setShowContent(true), 300);
     
@@ -73,122 +58,109 @@ const Login = () => {
     script.src = 'https://accounts.google.com/gsi/client';
     script.async = true;
     script.defer = true;
-    script.onload = initializeGoogleSignIn;
-    document.head.appendChild(script);
+    script.onerror = (error) => {
+      console.error('Error loading Google API script:', error);
+      setError('Failed to load Google Sign-In. Please try again later.');
+    };
+    document.body.appendChild(script);
+
+    script.onload = initializeGoogleAuth;
 
     return () => {
       clearTimeout(timer);
       const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
       if (existingScript) {
-        document.head.removeChild(existingScript);
+        document.body.removeChild(existingScript);
       }
     };
   }, [darkMode, isMobile, isTablet]);
 
-  const initializeGoogleSignIn = () => {
-    if (window.google) {
-      try {
-        // Use localhost for local development
-        const currentOrigin = window.location.origin;
-        const redirectUri = 'http://localhost:3000';
-
-        console.log('Initializing Google OAuth with origin:', currentOrigin, 'redirect_uri:', redirectUri);
-
-        window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleCredentialResponse,
-          auto_select: false,
-          cancel_on_tap_outside: true,
-          context: 'signin',
-          ux_mode: 'popup',
-          use_fedcm_for_prompt: false,  // Disable FedCM for better compatibility
-          itp_support: true,
-          // Use localhost for redirect URI
-          redirect_uri: redirectUri,
-          // Ensure the origin matches
-          origin: currentOrigin
-        });
-
-        // Clear any existing button first
-        const buttonContainer = document.getElementById('google-signin-button');
-        if (buttonContainer) {
-          buttonContainer.innerHTML = '';
-        }
-
-        // Render the sign-in button
-        window.google.accounts.id.renderButton(
-          document.getElementById('google-signin-button'),
-          {
-            theme: darkMode ? 'filled_black' : 'outline',
-            size: 'large',
-            width: isMobile ? 280 : isTablet ? 300 : 320,
-            text: 'signin_with',
-            shape: 'rectangular',
-            logo_alignment: 'left',
-            type: 'standard'
-          }
-        );
-      } catch (error) {
-        console.error('Error initializing Google Sign-In:', error);
-        setError('Failed to initialize Google Sign-In. Please try refreshing the page.');
+  const initializeGoogleAuth = () => {
+    try {
+      // Prevent multiple initializations
+      if (document.getElementById('googleSignIn').hasChildNodes()) {
+        return;
       }
+
+      const origin = window.location.origin;
+      
+      console.log('Initializing Google OAuth with origin:', origin);
+      
+      if (!API_CONFIG.GOOGLE_CLIENT_ID) {
+        throw new Error('Google Client ID is not configured');
+      }
+
+      window.google.accounts.id.initialize({
+        client_id: API_CONFIG.GOOGLE_CLIENT_ID,
+        callback: handleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+        context: 'signin',
+        ux_mode: 'popup'
+      });
+
+      // Clear any existing button content first
+      const buttonContainer = document.getElementById('googleSignIn');
+      buttonContainer.innerHTML = '';
+
+      window.google.accounts.id.renderButton(
+        buttonContainer,
+        {
+          type: 'standard',
+          theme: darkMode ? 'filled_black' : 'outline',
+          size: 'large',
+          text: 'signin_with',
+          shape: 'rectangular',
+          logo_alignment: 'left',
+          width: 250
+        }
+      );
+
+      // Simplified prompt handling
+      try {
+        window.google.accounts.id.prompt();
+      } catch (promptError) {
+        console.log('Google prompt not shown:', promptError);
+        // This is fine, the button will still work
+      }
+    } catch (error) {
+      console.error('Error initializing Google Auth:', error);
+      setError('Failed to initialize Google Sign-In. Please try again later.');
     }
   };
 
   const handleCredentialResponse = async (response) => {
-    setLoading(true);
-    setError('');
-
     try {
-      if (!response.credential) {
-        throw new Error('No credential received from Google');
-      }
-
-      console.log('Making request to:', `${API_CONFIG.BASE_URL}/auth/google`);
-
+      setLoading(true);
+      setError('');
+      console.log('Received credential response');
+      
       const result = await fetch(`${API_CONFIG.BASE_URL}/auth/google`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Origin': window.location.origin
         },
         credentials: 'include',
-        mode: 'cors',
         body: JSON.stringify({
-          credential: response.credential,
-        }),
+          credential: response.credential
+        })
       });
 
-      let data;
-      const contentType = result.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        try {
-          data = await result.json();
-        } catch (jsonError) {
-          console.error('Failed to parse JSON response:', jsonError);
-          throw new Error('Invalid response from server');
-        }
-      } else {
-        throw new Error(`Unexpected response type: ${contentType}`);
-      }
-
       if (!result.ok) {
-        throw new Error(data.error || `HTTP error! status: ${result.status}`);
+        throw new Error(`HTTP error! status: ${result.status}`);
       }
 
-      if (data.success && data.user && data.access_token) {
+      const data = await result.json();
+      
+      if (data.success) {
         await login(data.user, data.access_token);
-        console.log('Login successful, user authenticated');
+        navigate('/');
       } else {
-        throw new Error(data.error || 'Authentication failed');
+        setError(data.error || 'Login failed. Please try again.');
       }
-    } catch (err) {
-      console.error('Login error:', err);
-      setError(err.message || 'Network error. Please try again.');
-      // Clear any stored invalid tokens
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user');
+    } catch (error) {
+      console.error('Login error:', error);
+      setError('Failed to sign in with Google. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -197,7 +169,7 @@ const Login = () => {
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
     // Re-initialize Google button with new theme
-    setTimeout(initializeGoogleSignIn, 100);
+    setTimeout(initializeGoogleAuth, 100);
   };
 
   const validateForm = () => {
@@ -492,7 +464,7 @@ const Login = () => {
 
               <Fade in={showContent} timeout={1200}>
                 <Box sx={{ mb: 2.5 }}>
-                  <div id="google-signin-button" style={{ 
+                  <div id="googleSignIn" style={{ 
                     display: 'flex', 
                     justifyContent: 'center',
                     marginBottom: '12px',

@@ -4,47 +4,75 @@
  */
 
 export class ChatStorage {
-  constructor(userId) {
+  constructor(userId, userEmail = null) {
     this.userId = userId;
+    this.userEmail = userEmail;
     this.storageKey = `chatData_${userId}`;
+    this.emailKey = userEmail ? `chatData_email_${userEmail}` : null;
   }
 
   /**
-   * Get the complete chat structure for the user
+   * Get the complete chat structure for the user with email fallback
    */
   getUserChatData() {
     try {
-      const data = localStorage.getItem(this.storageKey);
+      // First try to get by userId
+      let data = localStorage.getItem(this.storageKey);
+      
+      // If no data found and we have email, try email-based key
+      if (!data && this.emailKey) {
+        data = localStorage.getItem(this.emailKey);
+        if (data) {
+          // Migrate data to userId-based key
+          localStorage.setItem(this.storageKey, data);
+        }
+      }
+      
       return data ? JSON.parse(data) : {
         userId: this.userId,
+        userEmail: this.userEmail,
         chats: [],
         currentChatId: null,
         currentSubChatId: null,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        migrations: {
+          emailToId: this.emailKey ? new Date().toISOString() : null
+        }
       };
     } catch (error) {
       console.error('Error reading chat data from localStorage:', error);
       return {
         userId: this.userId,
+        userEmail: this.userEmail,
         chats: [],
         currentChatId: null,
         currentSubChatId: null,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        migrations: {}
       };
     }
   }
 
   /**
-   * Save the complete chat structure
+   * Save the complete chat structure with email backup
    */
   saveUserChatData(data) {
     try {
       const enrichedData = {
         ...data,
         userId: this.userId,
+        userEmail: this.userEmail,
         lastUpdated: new Date().toISOString()
       };
+      
+      // Save to userId-based key
       localStorage.setItem(this.storageKey, JSON.stringify(enrichedData));
+      
+      // Also save to email-based key for backup/cross-device access
+      if (this.emailKey) {
+        localStorage.setItem(this.emailKey, JSON.stringify(enrichedData));
+      }
+      
       return true;
     } catch (error) {
       console.error('Error saving chat data to localStorage:', error);
@@ -328,6 +356,51 @@ export class ChatStorage {
       console.error('Error during migration:', error);
       return false;
     }
+  }
+
+  /**
+   * Load chat history for user on login
+   */
+  loadUserChatHistory() {
+    const data = this.getUserChatData();
+    
+    // Load all conversations and messages
+    const conversations = data.chats || [];
+    const loadedChats = [];
+    
+    conversations.forEach(chat => {
+      const chatData = {
+        id: chat.chatId,
+        title: chat.title,
+        created_at: chat.created_at,
+        messages: []
+      };
+      
+      // Load main chat messages
+      const mainMessages = this.getChatMessages(chat.chatId);
+      if (mainMessages.length > 0) {
+        chatData.messages = mainMessages;
+      }
+      
+      // Load sub-chat messages
+      if (chat.subChats && chat.subChats.length > 0) {
+        chatData.subChats = chat.subChats.map(subChat => ({
+          id: subChat.subChatId,
+          title: subChat.title,
+          created_at: subChat.created_at,
+          messages: subChat.messages || []
+        }));
+      }
+      
+      loadedChats.push(chatData);
+    });
+    
+    return {
+      chats: loadedChats,
+      currentChatId: data.currentChatId,
+      currentSubChatId: data.currentSubChatId,
+      lastUpdated: data.lastUpdated
+    };
   }
 }
 

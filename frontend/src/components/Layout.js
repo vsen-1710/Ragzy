@@ -262,6 +262,44 @@ function Layout() {
     }
   };
 
+  // Load sub-chats for a parent conversation
+  const loadSubChats = async (parentId) => {
+    try {
+      setLoadingSubChats(prev => ({ ...prev, [parentId]: true }));
+      
+      const response = await axios.get(`${API_URL}/chat/conversations/${parentId}/sub-conversations`, {
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.data.success) {
+        const subConversations = response.data.conversations || [];
+        console.log(`Loaded ${subConversations.length} sub-chats for parent ${parentId}`);
+        
+        // Update subChats state
+        setSubChats(prev => ({ ...prev, [parentId]: subConversations }));
+        
+        // Update the parent conversation in the main conversations list to include sub_conversations
+        setConversations(prev => prev.map(conv => {
+          if (conv.id === parentId) {
+            return { ...conv, sub_conversations: subConversations };
+          }
+          return conv;
+        }));
+      } else {
+        console.error('Failed to load sub-chats for parent:', parentId, response.data);
+        setSubChats(prev => ({ ...prev, [parentId]: [] }));
+      }
+    } catch (error) {
+      console.error('Error loading sub-chats for parent:', parentId, error);
+      setSubChats(prev => ({ ...prev, [parentId]: [] }));
+    } finally {
+      setLoadingSubChats(prev => ({ ...prev, [parentId]: false }));
+    }
+  };
+
   const handleDelete = async () => {
     if (!selectedConversation) return;
     
@@ -879,11 +917,30 @@ function Layout() {
     }
   };
 
+  // Get parent conversation context for sub-chat inheritance
+  const getParentConversationContext = async (parentId) => {
+    try {
+      const response = await axios.get(`${API_URL}/chat/conversations/${parentId}/messages`, {
+        headers: getAuthHeaders()
+      });
+      if (response.data.success && response.data.messages) {
+        return response.data.messages.slice(-5); // Last 5 messages for context
+      }
+    } catch (error) {
+      console.error('Error fetching parent context:', error);
+    }
+    return [];
+  };
+
   const createSubChat = async (parentId, title = null) => {
     try {
+      // Get context from parent conversation
+      const parentContext = await getParentConversationContext(parentId);
+      
       const response = await axios.post(`${API_URL}/chat/conversations/${parentId}/sub-conversations`, {
         title: title || 'New Sub-chat',
-        inherit_context: false  // Create fresh sub chat without parent history
+        inherit_context: true, // Flag to indicate context inheritance
+        parent_context: parentContext // Last 5 messages for context
       }, {
         headers: {
           ...getAuthHeaders(),
@@ -894,129 +951,174 @@ function Layout() {
       if (response.data.success) {
         const newSubChat = response.data.conversation;
         
-        // Update local storage with new structured format
+        // Update local storage with hierarchical structure
         if (chatStorage.current) {
-          chatStorage.current.saveSubChat(parentId, {
-            id: newSubChat.id,
-            title: newSubChat.title,
-            created_at: newSubChat.created_at,
-            messages: []
-          });
+          chatStorage.current.saveConversation(newSubChat);
+          
+          // Update parent's sub-chat list
+          const parentConv = conversations.find(c => c.id === parentId);
+          if (parentConv) {
+            const updatedParent = {
+              ...parentConv,
+              sub_conversations: [...(parentConv.sub_conversations || []), newSubChat]
+            };
+            chatStorage.current.saveConversation(updatedParent);
+          }
         }
         
-        // Reload sub-chats for the parent
-        setSubChats(prev => ({ ...prev, [parentId]: [] })); // Clear cache
-        await loadSubChats(parentId);
+        // Refresh conversations list
+        loadConversations();
         
-        // Show success message
-        showSnackbar(`Sub-chat "${newSubChat.title}" created successfully`, 'success');
+        // Navigate to new sub-chat
+        window.location.href = `/?conversation=${newSubChat.id}&parent=${parentId}`;
         
-        // Navigate to the new sub-chat
-        window.location.href = `/?conversation=${newSubChat.id}`;
+        return newSubChat.id;
+      } else {
+        throw new Error('Failed to create sub-chat');
       }
     } catch (error) {
       console.error('Error creating sub-chat:', error);
-      showSnackbar('Failed to create sub-chat. Please try again.', 'error');
-    } finally {
-      setQuickCreateParent(null);
-    }
-  };
-
-  // Enhanced quick create sub-chat from main chat
-  const quickCreateSubChat = (parentId, parentTitle) => {
-    setQuickCreateParent({ id: parentId, title: parentTitle });
-    // Auto-create with smart naming
-    const subChatTitle = `${parentTitle} - Discussion`;
-    createSubChat(parentId, subChatTitle);
-  };
-
-  // Enhanced sub-chat management
-  const handleSubChatAction = (action, subChat, parentId) => {
-    switch (action) {
-      case 'rename':
-        setSelectedSubChat({ ...subChat, parent_id: parentId });
-        setNewSubChatTitle(subChat.title || '');
-        setSubChatRenameDialogOpen(true);
-        break;
-      case 'delete':
-        setSelectedSubChat({ ...subChat, parent_id: parentId });
-        setSubChatDeleteConfirmOpen(true);
-        break;
-      case 'duplicate':
-        createSubChat(parentId, `Copy of ${subChat.title}`);
-        break;
-      default:
-        break;
-    }
-    setSubChatMenuAnchor(null);
-  };
-
-  const toggleConversationExpanded = (convId) => {
-    setExpandedConversations(prev => {
-      const newExpanded = { ...prev, [convId]: !prev[convId] };
-      
-      // If expanding and we don't have sub-chats loaded yet, load them
-      if (newExpanded[convId] && !subChats[convId]) {
-        loadSubChats(convId);
-      }
-      
-      return newExpanded;
-    });
-  };
-
-  // Sub-chat functions
-  const loadSubChats = async (conversationId) => {
-    if (subChats[conversationId] || loadingSubChats[conversationId]) return;
-    
-    setLoadingSubChats(prev => ({ ...prev, [conversationId]: true }));
-    
-    try {
-      const response = await axios.get(`${API_URL}/chat/conversations/${conversationId}/sub-conversations`, {
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json'
-        }
+      setSnackbar({
+        message: `Failed to create sub-chat: ${error.message}`,
+        type: 'error'
       });
-      
-      if (response.data.success) {
-        setSubChats(prev => ({
-          ...prev,
-          [conversationId]: response.data.conversations || []
-        }));
-      }
-    } catch (error) {
-      console.error('Error loading sub-chats:', error);
-    } finally {
-      setLoadingSubChats(prev => ({ ...prev, [conversationId]: false }));
+      return null;
     }
   };
 
-  const renameSubChat = async () => {
-    if (!selectedSubChat || !newSubChatTitle.trim()) return;
+  // Enhanced conversation rendering with tree structure
+  const renderConversationItem = (conversation, isSubChat = false, parentId = null) => {
+    const isActive = conversation.id === currentConversationId;
+    const hasSubChats = conversation.sub_conversations && conversation.sub_conversations.length > 0;
+    const isExpanded = expandedConversations[conversation.id];
     
-    try {
-      const response = await axios.put(`${API_URL}/chat/conversations/${selectedSubChat.id}/rename`, {
-        title: newSubChatTitle.trim()
-      }, {
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.data.success) {
-        // Reload sub-chats for the parent conversation
-        const parentId = selectedSubChat.parent_id;
-        setSubChats(prev => ({ ...prev, [parentId]: [] })); // Clear cache
-        await loadSubChats(parentId);
+    return (
+      <Box key={conversation.id}>
+        {/* Main conversation item */}
+        <Box
+          onClick={() => {
+            if (!isSubChat) {
+              window.location.href = `/?conversation=${conversation.id}`;
+            }
+          }}
+          className={`conversation-item ${isActive ? 'active' : ''} ${isSubChat ? 'sub-chat-item' : ''}`}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            p: isSubChat ? '6px 12px 6px 40px' : '8px 12px',
+            cursor: 'pointer',
+            borderRadius: 1,
+            mb: 0.5,
+            ml: isSubChat ? 1 : 0,
+            fontSize: isSubChat ? '13px' : '14px',
+            color: isActive ? '#2563eb' : '#374151',
+            bgcolor: isActive ? 'rgba(37, 99, 235, 0.1)' : 'transparent',
+            '&:hover': {
+              bgcolor: isActive ? 'rgba(37, 99, 235, 0.1)' : '#f8fafc'
+            }
+          }}
+        >
+          {/* Expand/collapse button for parent chats */}
+          {hasSubChats && !isSubChat && (
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpandedConversations(prev => ({ ...prev, [conversation.id]: !prev[conversation.id] }));
+              }}
+              sx={{ 
+                width: 20, 
+                height: 20,
+                color: '#6b7280'
+              }}
+            >
+              {isExpanded ? <KeyboardArrowDownIcon fontSize="small" /> : <KeyboardArrowRightIcon fontSize="small" />}
+            </IconButton>
+          )}
+          
+          {/* Sub-chat indicator */}
+          {isSubChat && (
+            <Box sx={{ 
+              width: 16, 
+              height: 16, 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              color: '#9ca3af'
+            }}>
+              <KeyboardArrowRightIcon fontSize="small" sx={{ fontSize: 12 }} />
+            </Box>
+          )}
+          
+          {/* Conversation title */}
+          <Typography
+            variant="body2"
+            sx={{
+              flex: 1,
+              fontSize: isSubChat ? '12px' : '13px',
+              fontWeight: isActive ? 500 : 400,
+              color: 'inherit',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}
+          >
+            {conversation.title || (isSubChat ? 'Sub-chat' : 'New Conversation')}
+          </Typography>
+          
+          {/* Actions menu */}
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuAnchor(e.currentTarget);
+              setSelectedConversation(conversation);
+            }}
+            sx={{ 
+              opacity: 0.7,
+              '&:hover': { opacity: 1 },
+              width: 24,
+              height: 24
+            }}
+          >
+            <MoreVertIcon fontSize="small" />
+          </IconButton>
+        </Box>
         
-        setSubChatRenameDialogOpen(false);
-        setNewSubChatTitle('');
-        setSelectedSubChat(null);
-      }
-    } catch (error) {
-      console.error('Error renaming sub-chat:', error);
-    }
+        {/* Sub-chats rendering */}
+        {hasSubChats && isExpanded && !isSubChat && (
+          <Box sx={{ ml: 1 }}>
+            {conversation.sub_conversations.map(subChat => 
+              renderConversationItem(subChat, true, conversation.id)
+            )}
+            
+            {/* Add sub-chat button */}
+            <Button
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                createSubChat(conversation.id);
+              }}
+              sx={{
+                ml: 2,
+                mt: 0.5,
+                mb: 1,
+                fontSize: '11px',
+                color: '#6b7280',
+                textTransform: 'none',
+                '&:hover': {
+                  bgcolor: 'rgba(107, 114, 128, 0.1)'
+                }
+              }}
+              startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+            >
+              Add Sub-chat
+            </Button>
+          </Box>
+        )}
+      </Box>
+    );
   };
 
   const drawer = (
@@ -1136,346 +1238,9 @@ function Layout() {
                 </Typography>
                 
                 {/* Conversations in this group */}
-                {groupConversations.map((conv) => (
-                  <Box key={conv.id}>
-                    {/* Main Conversation - Folder Style */}
-                    <ListItem disablePadding sx={{ mb: 0.5 }}>
-                      <Box sx={{ width: '100%', display: 'flex', alignItems: 'center' }}>
-                        {/* Folder Expand/Collapse Icon */}
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            toggleConversationExpanded(conv.id);
-                          }}
-                          sx={{ 
-                            minWidth: 28,
-                            height: 28,
-                            mr: 0.5,
-                            color: '#64748b',
-                            '&:hover': { 
-                              color: '#475569',
-                              bgcolor: 'rgba(100, 116, 139, 0.1)'
-                            }
-                          }}
-                        >
-                          {expandedConversations[conv.id] ? 
-                            <KeyboardArrowDownIcon fontSize="small" /> : 
-                            <KeyboardArrowRightIcon fontSize="small" />
-                          }
-                        </IconButton>
-
-                        {/* Main Conversation Button with Folder Icon */}
-                        <ListItemButton
-                          component={Link}
-                          to={`/?conversation=${conv.id}`}
-                          onClick={() => {
-                            if (isMobile) setMobileOpen(false);
-                            setTimeout(() => {
-                              window.dispatchEvent(new CustomEvent('conversationChange', { 
-                                detail: { conversationId: conv.id } 
-                              }));
-                            }, 100);
-                          }}
-                          className={currentConversationId === conv.id ? 'active' : ''}
-                          sx={{
-                            borderRadius: 2,
-                            py: 1,
-                            px: 1.5,
-                            color: '#475569',
-                            flex: 1,
-                            transition: 'all 0.2s ease-in-out',
-                            '&:hover': {
-                              bgcolor: '#f8fafc',
-                              transform: 'translateX(2px)',
-                              boxShadow: '0 2px 4px -1px rgba(0, 0, 0, 0.1)',
-                            },
-                            '&.active': {
-                              bgcolor: '#eff6ff',
-                              color: '#2563eb',
-                              boxShadow: '0 2px 4px -1px rgba(37, 99, 235, 0.2)',
-                            }
-                          }}
-                        >
-                          <ListItemIcon sx={{ minWidth: 32 }}>
-                            {expandedConversations[conv.id] ? 
-                              <FolderOpenIcon sx={{ fontSize: 20, color: '#f59e0b' }} /> :
-                              <FolderIcon sx={{ fontSize: 20, color: '#f59e0b' }} />
-                            }
-                          </ListItemIcon>
-                          <ListItemText 
-                            primary={conv.title || 'New Chat'}
-                            secondary={formatDate(conv.created_at)}
-                            primaryTypographyProps={{ 
-                              fontSize: '14px',
-                              fontWeight: 600,
-                              noWrap: true
-                            }}
-                            secondaryTypographyProps={{ 
-                              fontSize: '11px',
-                              color: '#94a3b8'
-                            }}
-                          />
-                        </ListItemButton>
-
-                        {/* Add Sub-chat Button */}
-                        <Tooltip title="Create Sub-chat" placement="top">
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              quickCreateSubChat(conv.id, conv.title);
-                            }}
-                            sx={{ 
-                              minWidth: 28,
-                              height: 28,
-                              mr: 0.5,
-                              color: '#10b981',
-                              opacity: 0.7,
-                              transition: 'all 0.2s ease-in-out',
-                              '&:hover': { 
-                                opacity: 1,
-                                bgcolor: 'rgba(16, 185, 129, 0.1)',
-                                transform: 'scale(1.1)'
-                              }
-                            }}
-                          >
-                            <CreateNewFolderIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-
-                        {/* Main Chat Options Menu */}
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setSelectedConversation(conv);
-                            setMenuAnchor(e.currentTarget);
-                          }}
-                          sx={{ 
-                            minWidth: 28,
-                            height: 28,
-                            color: '#64748b',
-                            '&:hover': { 
-                              color: '#475569',
-                              bgcolor: 'rgba(100, 116, 139, 0.1)'
-                            }
-                          }}
-                        >
-                          <MoreVertIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    </ListItem>
-
-                    {/* Sub-conversations - Collapsible */}
-                    <Collapse in={expandedConversations[conv.id]} timeout="auto" unmountOnExit>
-                      <Box sx={{ pl: 4, pr: 1, py: 0.5 }}>
-                        {loadingSubChats[conv.id] ? (
-                          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-                            <CircularProgress size={20} />
-                          </Box>
-                        ) : (
-                          <>
-                            {/* Add New Sub-chat Option */}
-                            <ListItem disablePadding sx={{ mb: 0.5 }}>
-                              <ListItemButton
-                                onClick={() => createSubChat(conv.id)}
-                                sx={{
-                                  borderRadius: 1.5,
-                                  py: 0.8,
-                                  px: 1.5,
-                                  color: '#10b981',
-                                  border: '1px dashed #10b981',
-                                  opacity: 0.8,
-                                  transition: 'all 0.2s ease-in-out',
-                                  '&:hover': {
-                                    opacity: 1,
-                                    bgcolor: 'rgba(16, 185, 129, 0.05)',
-                                    borderColor: '#059669',
-                                    transform: 'translateX(4px)',
-                                  }
-                                }}
-                              >
-                                <ListItemIcon sx={{ minWidth: 28 }}>
-                                  <AddIcon sx={{ fontSize: 16, color: '#10b981' }} />
-                                </ListItemIcon>
-                                <ListItemText 
-                                  primary="New Sub-chat"
-                                  primaryTypographyProps={{ 
-                                    fontSize: '13px',
-                                    fontWeight: 500,
-                                    fontStyle: 'italic'
-                                  }}
-                                />
-                              </ListItemButton>
-                            </ListItem>
-
-                            {/* Existing Sub-conversations */}
-                            {subChats[conv.id] && subChats[conv.id].map((subChat) => (
-                              <ListItem key={subChat.id} disablePadding sx={{ mb: 0.5 }}>
-                                <Box sx={{ width: '100%', display: 'flex', alignItems: 'center' }}>
-                                  {/* Sub-chat connector line with improved design */}
-                                  <Box 
-                                    sx={{ 
-                                      width: 20,
-                                      height: 1,
-                                      bgcolor: '#cbd5e1',
-                                      mr: 1,
-                                      position: 'relative',
-                                      '&::before': {
-                                        content: '""',
-                                        position: 'absolute',
-                                        left: -12,
-                                        top: -12,
-                                        width: 1,
-                                        height: 24,
-                                        bgcolor: '#cbd5e1'
-                                      },
-                                      '&::after': {
-                                        content: '""',
-                                        position: 'absolute',
-                                        right: 0,
-                                        top: -2,
-                                        width: 4,
-                                        height: 4,
-                                        bgcolor: '#6366f1',
-                                        borderRadius: '50%'
-                                      }
-                                    }} 
-                                  />
-                                  
-                                  <ListItemButton
-                                    component={Link}
-                                    to={`/?conversation=${subChat.id}`}
-                                    onClick={() => {
-                                      if (isMobile) setMobileOpen(false);
-                                      setTimeout(() => {
-                                        window.dispatchEvent(new CustomEvent('conversationChange', { 
-                                          detail: { conversationId: subChat.id } 
-                                        }));
-                                      }, 100);
-                                    }}
-                                    className={currentConversationId === subChat.id ? 'active' : ''}
-                                    sx={{
-                                      borderRadius: 1.5,
-                                      py: 1,
-                                      px: 2,
-                                      color: '#64748b',
-                                      flex: 1,
-                                      transition: 'all 0.2s ease-in-out',
-                                      bgcolor: 'rgba(248, 250, 252, 0.7)',
-                                      border: '1px solid rgba(226, 232, 240, 0.7)',
-                                      position: 'relative',
-                                      ml: 0.5,
-                                      '&:hover': {
-                                        bgcolor: '#f1f5f9',
-                                        borderColor: '#cbd5e1',
-                                        transform: 'translateX(6px)',
-                                        boxShadow: '0 3px 6px -1px rgba(0, 0, 0, 0.1)',
-                                        color: '#374151',
-                                      },
-                                      '&.active': {
-                                        bgcolor: '#dbeafe',
-                                        color: '#2563eb',
-                                        borderColor: '#93c5fd',
-                                        boxShadow: '0 3px 6px -1px rgba(37, 99, 235, 0.2)',
-                                        '&::before': {
-                                          content: '""',
-                                          position: 'absolute',
-                                          left: -3,
-                                          top: 0,
-                                          bottom: 0,
-                                          width: 3,
-                                          bgcolor: '#2563eb',
-                                          borderRadius: '0 2px 2px 0'
-                                        }
-                                      }
-                                    }}
-                                  >
-                                    <ListItemIcon sx={{ minWidth: 32 }}>
-                                      <ChatBubbleOutlineIcon sx={{ fontSize: 18, color: '#6366f1' }} />
-                                    </ListItemIcon>
-                                    <ListItemText 
-                                      primary={subChat.title || 'Untitled Sub-chat'}
-                                      secondary={formatDate(subChat.created_at)}
-                                      primaryTypographyProps={{ 
-                                        fontSize: '13px',
-                                        fontWeight: 500,
-                                        noWrap: true
-                                      }}
-                                      secondaryTypographyProps={{ 
-                                        fontSize: '10px',
-                                        color: '#94a3b8'
-                                      }}
-                                    />
-                                  </ListItemButton>
-
-                                  {/* Sub-chat Options with improved design */}
-                                  <Tooltip title="Rename sub-chat" placement="top">
-                                    <IconButton
-                                      size="small"
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        handleSubChatAction('rename', subChat, conv.id);
-                                      }}
-                                      sx={{ 
-                                        minWidth: 26,
-                                        height: 26,
-                                        mr: 0.5,
-                                        color: '#64748b',
-                                        opacity: 0.6,
-                                        transition: 'all 0.2s ease-in-out',
-                                        '&:hover': { 
-                                          opacity: 1,
-                                          bgcolor: 'rgba(100, 116, 139, 0.1)',
-                                          color: '#374151',
-                                          transform: 'scale(1.1)'
-                                        }
-                                      }}
-                                    >
-                                      <EditIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </Tooltip>
-
-                                  {/* Delete sub-chat option */}
-                                  <Tooltip title="Delete sub-chat" placement="top">
-                                    <IconButton
-                                      size="small"
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setSelectedSubChat(subChat);
-                                        setSubChatDeleteConfirmOpen(true);
-                                      }}
-                                      sx={{ 
-                                        minWidth: 26,
-                                        height: 26,
-                                        color: '#ef4444',
-                                        opacity: 0.6,
-                                        transition: 'all 0.2s ease-in-out',
-                                        '&:hover': { 
-                                          opacity: 1,
-                                          bgcolor: 'rgba(239, 68, 68, 0.1)',
-                                          transform: 'scale(1.1)'
-                                        }
-                                      }}
-                                    >
-                                      <DeleteIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </Tooltip>
-                                </Box>
-                              </ListItem>
-                            ))}
-                          </>
-                        )}
-                      </Box>
-                    </Collapse>
-                  </Box>
-                ))}
+                {groupConversations.map((conv) => 
+                  renderConversationItem(conv)
+                )}
               </Box>
             ))}
             
@@ -1802,7 +1567,10 @@ function Layout() {
         <DialogActions>
           <Button onClick={() => setSubChatRenameDialogOpen(false)}>Cancel</Button>
           <Button 
-            onClick={renameSubChat}
+            onClick={() => {
+              setSubChatRenameDialogOpen(false);
+              setSelectedSubChat(null);
+            }}
             variant="contained"
             color="primary"
           >
