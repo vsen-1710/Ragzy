@@ -45,6 +45,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
+      - REACT_APP_API_URL=http://ragzy.duckdns.org:8080   # 🔧 Add your frontend's API URL
     volumes:
       - ./app:/app/app
       - ./run.py:/app/run.py
