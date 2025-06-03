@@ -15,20 +15,34 @@ class WeaviateServiceOptimized:
         self._executor = ThreadPoolExecutor(max_workers=5)
         self._schema_cache = {}
         self._cache_lock = threading.RLock()
+        self._schemas_initialized = False  # Track if schemas have been initialized
         
         # Performance settings
         self.batch_size = 50
         self.max_retries = 3
         self.timeout_seconds = 30
         
-        # Initialize schemas when client is available
-        self._ensure_schemas()
+        # Don't initialize schemas here - wait for application context
     
     def _get_client(self):
         """Get Weaviate client with lazy initialization"""
         if self.client is None:
             self.client = get_weaviate_client()
         return self.client
+    
+    def _ensure_schemas_if_needed(self):
+        """Ensure schemas are initialized, but only when we have an application context"""
+        if not self._schemas_initialized:
+            try:
+                # This will fail gracefully if no application context
+                client = self._get_client()
+                if client is not None:
+                    self._ensure_schemas()
+                    self._schemas_initialized = True
+            except Exception as e:
+                # If we can't initialize schemas now, that's okay - we'll try again later
+                logger.debug(f"Schema initialization delayed: {str(e)}")
+                pass
     
     @staticmethod
     def _with_retry(max_retries: int = 3):
@@ -198,13 +212,11 @@ class WeaviateServiceOptimized:
     @_with_retry(max_retries=3)
     @_with_error_handling("Create object")
     def create_object(self, class_name: str, properties: Dict[str, Any]) -> Optional[str]:
-        """Create a new object in Weaviate with enhanced error handling"""
+        """Create a new object in Weaviate"""
+        # Ensure schemas are initialized before any operation
+        self._ensure_schemas_if_needed()
+        
         try:
-            # Validate class exists
-            if class_name not in self._schema_cache:
-                logger.warning(f"Class {class_name} not found in schema cache")
-                return None
-            
             # Prepare properties with timestamp
             enhanced_properties = properties.copy()
             if 'created_at' not in enhanced_properties:
@@ -221,22 +233,31 @@ class WeaviateServiceOptimized:
                 logger.warning(f"No valid properties for {class_name}")
                 return None
             
-            result = self._get_client().data_object.create(
+            # Check if Weaviate client is available
+            client = self._get_client()
+            if client is None:
+                logger.error("Weaviate client is not available")
+                return None
+            
+            result = client.data_object.create(
                 data_object=filtered_properties,
                 class_name=class_name
             )
             
-            logger.debug(f"Created {class_name} object: {result}")
+            logger.debug(f"Created {class_name} object with ID: {result}")
             return result
             
         except Exception as e:
             logger.error(f"Error creating {class_name}: {str(e)}")
-            raise
+            return None
     
     @_with_retry(max_retries=3)
     @_with_error_handling("Get object")
     def get_object(self, class_name: str, object_id: str) -> Optional[Dict]:
         """Get an object by ID with enhanced error handling"""
+        # Ensure schemas are initialized before any operation
+        self._ensure_schemas_if_needed()
+        
         try:
             result = self._get_client().data_object.get_by_id(
                 object_id, 
@@ -253,6 +274,9 @@ class WeaviateServiceOptimized:
     def query_objects(self, class_name: str, where_filter: Optional[Dict] = None, 
                      limit: int = 100, offset: int = 0) -> List[Dict]:
         """Query objects with enhanced filtering and pagination"""
+        # Ensure schemas are initialized before any operation
+        self._ensure_schemas_if_needed()
+        
         try:
             # Get cached properties or fetch them
             properties = self._schema_cache.get(class_name)
@@ -295,6 +319,9 @@ class WeaviateServiceOptimized:
     @_with_error_handling("Update object")
     def update_object(self, class_name: str, object_id: str, properties: Dict[str, Any]) -> bool:
         """Update an object with enhanced validation"""
+        # Ensure schemas are initialized before any operation
+        self._ensure_schemas_if_needed()
+        
         try:
             # Validate properties against schema
             valid_properties = self._schema_cache.get(class_name, [])
@@ -374,6 +401,9 @@ class WeaviateServiceOptimized:
     
     def batch_create_objects(self, class_name: str, objects: List[Dict[str, Any]]) -> List[str]:
         """Create multiple objects in batch for better performance"""
+        # Ensure schemas are initialized before any operation
+        self._ensure_schemas_if_needed()
+        
         try:
             if not objects:
                 return []
@@ -496,6 +526,9 @@ class WeaviateServiceOptimized:
     @_with_error_handling("Create object with ID")
     def create_object_with_id(self, class_name: str, object_id: str, properties: Dict[str, Any]) -> bool:
         """Create a new object with a specific ID in Weaviate"""
+        # Ensure schemas are initialized before any operation
+        self._ensure_schemas_if_needed()
+        
         try:
             logger.info(f"Attempting to create {class_name} object with ID {object_id}")
             logger.debug(f"Properties: {properties}")

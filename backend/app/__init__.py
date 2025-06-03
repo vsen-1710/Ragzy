@@ -76,7 +76,8 @@ def create_app(config_class=Config):
             'http://localhost:3001',
             'http://127.0.0.1:3000',
             'http://127.0.0.1:3001',
-            'https://ragzy.onrender.com'
+            'https://ragzy.onrender.com',
+            'http://ragzy.duckdns.org:8080'
         ]
         
         # Set CORS headers for localhost development
@@ -107,7 +108,8 @@ def create_app(config_class=Config):
             allowed_origins = [
                 'http://localhost:3000',
                 'https://ragzy.onrender.com',
-                'http://localhost:3001'
+                'http://localhost:3001',
+                'http://ragzy.duckdns.org:8080'
             ]
             
             # Check if origin is valid
@@ -161,6 +163,16 @@ def create_app(config_class=Config):
     app.register_blueprint(chat_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(browser_tracking_bp)
+    
+    # Initialize Weaviate schemas within application context
+    with app.app_context():
+        try:
+            from app.services.weaviate_service import weaviate_service
+            if hasattr(weaviate_service, '_ensure_schemas_if_needed'):
+                weaviate_service._ensure_schemas_if_needed()
+            app.logger.info("Weaviate schemas initialized successfully")
+        except Exception as e:
+            app.logger.warning(f"Could not initialize Weaviate schemas: {str(e)}")
     
     # Create logs directory if it doesn't exist
     os.makedirs(app.config['LOG_DIR'], exist_ok=True)
