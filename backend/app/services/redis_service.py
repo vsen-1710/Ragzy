@@ -27,26 +27,38 @@ class RedisServiceOptimized:
         self._lock = threading.RLock()
         self._pipeline_cache = {}
         
-        # Enable Redis client optimizations
-        self.redis.set_response_callback('GET', self._deserialize_data)
-        self.redis.set_response_callback('MGET', lambda x: [self._deserialize_data(i) for i in x])
-        
-        # Configure Redis client for better performance
-        self.redis.config_set('maxmemory-policy', 'allkeys-lru')
-        self.redis.config_set('maxmemory-samples', '10')
-        self.redis.config_set('activedefrag', 'yes')
-        self.redis.config_set('lazyfree-lazy-eviction', 'yes')
-        self.redis.config_set('lazyfree-lazy-expire', 'yes')
-        self.redis.config_set('lazyfree-lazy-server-del', 'yes')
+        # Only configure Redis if client is available
+        if self.redis is not None:
+            try:
+                # Enable Redis client optimizations
+                self.redis.set_response_callback('GET', self._deserialize_data)
+                self.redis.set_response_callback('MGET', lambda x: [self._deserialize_data(i) for i in x])
+                
+                # Configure Redis client for better performance
+                self.redis.config_set('maxmemory-policy', 'allkeys-lru')
+                self.redis.config_set('maxmemory-samples', '10')
+                self.redis.config_set('activedefrag', 'yes')
+                self.redis.config_set('lazyfree-lazy-eviction', 'yes')
+                self.redis.config_set('lazyfree-lazy-expire', 'yes')
+                self.redis.config_set('lazyfree-lazy-server-del', 'yes')
+            except Exception as e:
+                print(f"Redis optimization failed: {e}")
+    
+    def _check_redis_available(self):
+        """Check if Redis is available"""
+        return self.redis is not None
     
     @staticmethod
     def _with_error_handling(operation_name: str = "Redis operation"):
         """Decorator for consistent error handling"""
         def decorator(func):
             @wraps(func)
-            def wrapper(*args, **kwargs):
+            def wrapper(self, *args, **kwargs):
+                if not self._check_redis_available():
+                    print(f"Redis not available for {operation_name}")
+                    return None
                 try:
-                    return func(*args, **kwargs)
+                    return func(self, *args, **kwargs)
                 except Exception as e:
                     print(f"Error in {operation_name}: {str(e)}")
                     return None

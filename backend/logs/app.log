@@ -2136,3 +2136,27 @@ User: i want to learn pytho... (TTL: 300s)
 2025-05-29 07:00:20,780 - app - INFO - Logger initialized
 2025-05-29 07:05:30,268 - app - INFO - Logger initialized
 2025-05-29 07:06:01,157 - app - INFO - Logger initialized
+2025-06-03 14:12:50,806 - app - INFO - Logger initialized
+2025-06-03 14:12:50,808 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-03 14:12:50,809 - app - INFO - Weaviate client will be initialized on first use
+2025-06-03 14:12:51,088 - app.services.weaviate_service - ERROR - Error ensuring schemas: Working outside of application context.
+
+This typically means that you attempted to use functionality that needed
+the current application. To solve this, set up an application context
+with app.app_context(). See the documentation for more information.
+2025-06-03 14:14:27,923 - app - INFO - Logger initialized
+2025-06-03 14:14:27,925 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-03 14:14:27,925 - app - INFO - Weaviate client will be initialized on first use
+2025-06-03 14:14:28,228 - app.services.weaviate_service - ERROR - Error ensuring schemas: Working outside of application context.
+
+This typically means that you attempted to use functionality that needed
+the current application. To solve this, set up an application context
+with app.app_context(). See the documentation for more information.
+2025-06-03 14:15:55,176 - app - INFO - Logger initialized
+2025-06-03 14:15:55,178 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-03 14:15:55,178 - app - INFO - Weaviate client will be initialized on first use
+2025-06-03 14:15:55,489 - app.services.weaviate_service - ERROR - Error ensuring schemas: Working outside of application context.
+
+This typically means that you attempted to use functionality that needed
+the current application. To solve this, set up an application context
+with app.app_context(). See the documentation for more information.

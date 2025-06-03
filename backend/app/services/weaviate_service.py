@@ -128,6 +128,33 @@ class WeaviateServiceOptimized:
                         "vectorizePropertyName": False
                     }
                 }
+            },
+            {
+                "class": "BrowserActivity",
+                "description": "Browser activity tracking data",
+                "properties": [
+                    {"name": "user_id", "dataType": ["text"], "description": "User ID"},
+                    {"name": "activity_type", "dataType": ["text"], "description": "Type of activity (click, scroll, navigation, etc.)"},
+                    {"name": "activity_data", "dataType": ["text"], "description": "JSON string of activity data"},
+                    {"name": "url", "dataType": ["text"], "description": "URL where activity occurred"},
+                    {"name": "page_title", "dataType": ["text"], "description": "Page title"},
+                    {"name": "timestamp", "dataType": ["date"], "description": "Activity timestamp"},
+                    {"name": "session_id", "dataType": ["text"], "description": "Browser session ID"},
+                    {"name": "engagement_score", "dataType": ["number"], "description": "Engagement score for the activity"}
+                ],
+                "vectorizer": "none"  # Disable vectorization for activity data
+            },
+            {
+                "class": "UserPreferences",
+                "description": "User preferences and settings",
+                "properties": [
+                    {"name": "user_id", "dataType": ["text"], "description": "User ID"},
+                    {"name": "browser_tracking_enabled", "dataType": ["boolean"], "description": "Whether browser tracking is enabled"},
+                    {"name": "tracking_settings", "dataType": ["text"], "description": "JSON string of tracking settings"},
+                    {"name": "created_at", "dataType": ["date"], "description": "Creation timestamp"},
+                    {"name": "updated_at", "dataType": ["date"], "description": "Last update timestamp"}
+                ],
+                "vectorizer": "none"  # Disable vectorization for preferences
             }
         ]
         

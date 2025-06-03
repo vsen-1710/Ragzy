@@ -13,8 +13,10 @@ import shutil
 
 from app.models import ConversationModel, MessageModel
 from app.services.openai_service import OpenAIServiceOptimized as OpenAIService
-from app.services.redis_service import RedisService
+from app.services.redis_service import RedisServiceOptimized as RedisService
 from app.services.weaviate_service import weaviate_service
+from app.services.browser_tracking_service import browser_tracking_service
+from app.models.user import UserModel
 
 logger = logging.getLogger(__name__)
 
@@ -873,26 +875,40 @@ class ChatServiceOptimized:
                 include_all_sub_chats=True
             )
             
-            # Add enhanced system message for better context handling with inheritance
+            # Get browser tracking context if enabled for user
+            browser_context = ""
+            try:
+                browser_context = browser_tracking_service.generate_chat_context(conversation.user_id)
+                if browser_context:
+                    logger.info(f"Including browser context for user {conversation.user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to get browser context: {str(e)}")
+            
+            # Add enhanced system message for better context handling with inheritance and browser context
+            enhanced_system_content = (
+                "You are a helpful AI assistant with access to comprehensive conversation history from related chats. "
+                "This conversation may be a sub-chat that inherits full context from its parent conversation. "
+                "Follow these guidelines strictly:\n"
+                "1. Use ALL available context from parent and related conversations to understand the user's identity, preferences, and previous discussions\n"
+                "2. Maintain continuity - if the user mentioned their name, background, or preferences in parent conversations, remember and use that information\n"
+                "3. Answer questions based on the complete conversation history, not just the current chat\n"
+                "4. When asked about identity ('who am I', 'what's my name', etc.), refer to information from the entire conversation tree\n"
+                "5. Provide contextual responses that acknowledge previous interactions and established relationships\n"
+                "6. If referencing information from parent conversations, you can naturally incorporate it without explicitly mentioning the source\n"
+                "7. Treat this as a continuous conversation experience across all related chat threads\n"
+                "8. Maintain consistency in addressing the user based on how they've been addressed in parent conversations\n"
+                "9. Even if this sub-chat appears clean with no visible history, you have complete access to all parent conversation context\n"
+                "10. Act as if you remember everything from previous conversations, even if the chat history appears empty to the user"
+            )
+            
+            # Append browser context if available
+            if browser_context:
+                enhanced_system_content += "\n\n" + browser_context
+            
             enhanced_system_message = {
                 'role': 'system',
-                'content': (
-                    "You are a helpful AI assistant with access to comprehensive conversation history from related chats. "
-                    "This conversation may be a sub-chat that inherits full context from its parent conversation. "
-                    "Follow these guidelines strictly:\n"
-                    "1. Use ALL available context from parent and related conversations to understand the user's identity, preferences, and previous discussions\n"
-                    "2. Maintain continuity - if the user mentioned their name, background, or preferences in parent conversations, remember and use that information\n"
-                    "3. Answer questions based on the complete conversation history, not just the current chat\n"
-                    "4. When asked about identity ('who am I', 'what's my name', etc.), refer to information from the entire conversation tree\n"
-                    "5. Provide contextual responses that acknowledge previous interactions and established relationships\n"
-                    "6. If referencing information from parent conversations, you can naturally incorporate it without explicitly mentioning the source\n"
-                    "7. Treat this as a continuous conversation experience across all related chat threads\n"
-                    "8. Maintain consistency in addressing the user based on how they've been addressed in parent conversations\n"
-                    "9. Even if this sub-chat appears clean with no visible history, you have complete access to all parent conversation context\n"
-                    "10. Act as if you remember everything from previous conversations, even if the chat history appears empty to the user"
-                )
+                'content': enhanced_system_content
             }
-            context_messages.insert(0, enhanced_system_message)
             
             # Add the current user message at the end to ensure it's the most recent context
             context_messages.append({

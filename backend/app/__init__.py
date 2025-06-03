@@ -156,9 +156,11 @@ def create_app(config_class=Config):
     # Register blueprints
     from app.routes.chat import chat_bp
     from app.routes.auth import auth_bp
+    from app.routes.browser_tracking import browser_tracking_bp
     
     app.register_blueprint(chat_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(browser_tracking_bp)
     
     # Create logs directory if it doesn't exist
     os.makedirs(app.config['LOG_DIR'], exist_ok=True)

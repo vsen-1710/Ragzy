@@ -1,15 +1,35 @@
 import React from 'react';
 import { Box, Typography, Avatar, IconButton, Tooltip } from '@mui/material';
-import { ContentCopy as ContentCopyIcon, Image as ImageIcon } from '@mui/icons-material';
+import { 
+  ContentCopy as ContentCopyIcon, 
+  Image as ImageIcon,
+  Refresh as RefreshIcon 
+} from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ThinkingIndicator from './ThinkingIndicator';
 import StreamingText from './StreamingText';
 
-const MessageBubble = ({ msg, onCopy, onStreamingComplete, setMessages, setCanCancel }) => {
+const MessageBubble = ({ msg, onCopy, onStreamingComplete, onRegenerate, setMessages, setCanCancel }) => {
   const isUser = msg.role === 'user';
   
+  // Function to find the previous user message for regeneration
+  const findPreviousUserMessage = () => {
+    // This would need to be passed from parent or we need access to all messages
+    // For now, we'll need to modify this to get the user message from context
+    return null;
+  };
+
+  // Handle regenerate click
+  const handleRegenerateClick = () => {
+    if (onRegenerate) {
+      // Find the user message that prompted this AI response
+      // We'll need to pass this from the parent component
+      onRegenerate(msg.regeneratePrompt || '', msg.regenerateHasImage || false);
+    }
+  };
+
   return (
     <Box className={`message-bubble ${isUser ? 'user-message' : 'ai-message'}`}>
       <Box className="message-content">
@@ -159,6 +179,29 @@ const MessageBubble = ({ msg, onCopy, onStreamingComplete, setMessages, setCanCa
                         <ContentCopyIcon className="copy-icon" />
                       </IconButton>
                     </Tooltip>
+
+                    {/* Regenerate Button - only show for completed AI responses */}
+                    {!msg.isStreaming && !msg.isTyping && onRegenerate && msg.regeneratePrompt && (
+                      <Tooltip title="Regenerate response">
+                        <IconButton
+                          className="regenerate-button"
+                          onClick={handleRegenerateClick}
+                          sx={{
+                            color: '#6b7280',
+                            width: 28,
+                            height: 28,
+                            '&:hover': {
+                              color: '#374151',
+                              backgroundColor: '#f1f5f9',
+                              transform: 'rotate(180deg)',
+                            },
+                            transition: 'all 0.3s ease',
+                          }}
+                        >
+                          <RefreshIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                     
                     <Typography className="message-timestamp ai-timestamp">
                       {new Date(msg.timestamp).toLocaleTimeString([], { 
