@@ -88,11 +88,8 @@ function ChatPage() {
   const [conversationId, setConversationId] = useState(() => getInitialConversationId());
   
   // Browser tracking state
-  const [isBrowserTrackingEnabled, setIsBrowserTrackingEnabled] = useState(false);
-  const [showTrackingToggle, setShowTrackingToggle] = useState(false);
-  const [lastActivitySync, setLastActivitySync] = useState(null);
   const [showBrowserTrackingHistory, setShowBrowserTrackingHistory] = useState(false);
-  const [pendingActivities, setPendingActivities] = useState([]);
+  const [isBrowserTrackingEnabled, setIsBrowserTrackingEnabled] = useState(false);
   
   // Recovery state for mid-response persistence
   const [currentRequestId, setCurrentRequestId] = useState(null);
@@ -109,6 +106,7 @@ function ChatPage() {
   const [copySnackbar, setCopySnackbar] = useState(false);
   const [scrollPosition, setScrollPosition] = useState(() => getInitialScrollPosition());
   const [showKeyboardHint, setShowKeyboardHint] = useState(false);
+  const [success, setSuccess] = useState('');
   
   // Dialog state
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
@@ -124,16 +122,25 @@ function ChatPage() {
   const [imagePreview, setImagePreview] = useState(null);
   const [uploadError, setUploadError] = useState('');
 
+  // Sub-chat/Thread functionality state
+  const [showSubChatDialog, setShowSubChatDialog] = useState(false);
+  const [selectedMessageForThread, setSelectedMessageForThread] = useState(null);
+  const [threadTitle, setThreadTitle] = useState('');
+
   // Initialize storage and tracking
   useEffect(() => {
     if (user?.id) {
       chatStorage.current = new ChatStorage(user.id, user.email);
       chatStorage.current.migrate();
+      
+      // Initialize browser tracker
       browserTracker.current = new BrowserActivityTracker(user.id);
       
-      // Sync tracking state with component state
+      // Get the actual tracking state from the tracker
       const isTrackingEnabled = browserTracker.current.isTrackingEnabled();
       setIsBrowserTrackingEnabled(isTrackingEnabled);
+      
+      console.log(`Browser tracking initialized: ${isTrackingEnabled}`);
       
       // Clean up legacy generic keys that might cause cross-chat contamination
       const cleanupLegacyKeys = () => {
@@ -379,38 +386,7 @@ function ChatPage() {
   const handleSendMessage = async () => {
     if ((!message.trim() && !selectedImage) || loading) return;
 
-    // Check if bot should respond based on tracking state
-    if (!isBrowserTrackingEnabled) {
-      // Show a message encouraging users to enable tracking for better responses
-      const userMessage = message.trim();
-      const userMessageObj = formatUserMessage(userMessage, selectedImage !== null);
-      setMessages(prev => [...prev, userMessageObj]);
-      
-      setTimeout(() => {
-        const botResponse = formatAssistantMessage(
-          "🔍 **Enable Browser Tracking for Better Responses!**\n\n" +
-          "I can provide more relevant and contextual answers when browser tracking is enabled. " +
-          "This helps me understand what you're working on and give you smarter responses.\n\n" +
-          "To enable tracking:\n" +
-          "1. Click the Browser Tracking toggle above\n" +
-          "2. Your data stays private and local\n" +
-          "3. Get better, more contextual responses!\n\n" +
-          `Here's a basic response to "${userMessage}":\n\n` +
-          getKeywordResponse(userMessage),
-          { 
-            id: `tracking-disabled-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            isTrackingPrompt: true
-          }
-        );
-        setMessages(prev => [...prev, botResponse]);
-      }, 500);
-      
-      setMessage('');
-      handleRemoveImage();
-      return;
-    }
-
+    // Send message regardless of tracking state - tracking only affects context
     await sendMessageInternal(message.trim(), selectedImage);
   };
 
@@ -534,8 +510,15 @@ function ChatPage() {
         return userMessage;
       }
       
-      // Add smart contextual information
-      return `${userMessage}\n\n[BROWSER CONTEXT - This helps me give you more relevant responses]:\n${activitySummary}`;
+      // Add comprehensive browser context for smarter responses
+      const contextualMessage = `[USER MESSAGE]: ${userMessage}
+
+[BROWSER CONTEXT FOR AI]: 
+${activitySummary}
+
+[TRACKING STATUS]: Browser tracking enabled - Use this context to provide more relevant and personalized responses based on the user's current browsing activity and interests.`;
+      
+      return contextualMessage;
     } catch (error) {
       console.error('Error getting browser context:', error);
       return userMessage;
@@ -574,6 +557,13 @@ function ChatPage() {
   async function sendMessageToAPI(conversationId, contextualMessage, hasImage, imageFile = null) {
     const fileToSend = imageFile || selectedImage;
     
+    // Force fast, non-streaming responses
+    const headers = { 
+      ...getAuthHeaders(),
+      'X-Force-Fast-Response': 'true',  // Custom header to force instant responses
+      'X-No-Streaming': 'true'          // Explicitly disable streaming
+    };
+    
     if (hasImage && fileToSend) {
       const formData = new FormData();
       formData.append('message', contextualMessage || '');
@@ -581,15 +571,21 @@ function ChatPage() {
       
       return fetch(`${API_URL}/chat/conversations/${conversationId}/messages/with-image`, {
         method: 'POST',
-        headers: { ...getAuthHeaders() },
+        headers: headers,
         body: formData,
         signal: abortControllerRef.current.signal
       });
     } else {
       return fetch(`${API_URL}/chat/conversations/${conversationId}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ message: contextualMessage }),
+        headers: { 
+          'Content-Type': 'application/json', 
+          ...headers
+        },
+        body: JSON.stringify({ 
+          message: contextualMessage,
+          include_browser_context: isBrowserTrackingEnabled  // Tell backend to include context
+        }),
         signal: abortControllerRef.current.signal
       });
     }
@@ -883,6 +879,89 @@ function ChatPage() {
       return "❌ Browser activity tracking is not available.";
     }
     
+    // Quick tracking test command
+    if (lowerMessage === '/track test' || lowerMessage === '/test tracking') {
+      if (!isBrowserTrackingEnabled) {
+        return "❌ **Browser tracking is disabled.**\n\n" +
+               "**To test browser tracking:**\n" +
+               "1. Enable tracking: `/enable tracking` or press **Ctrl+T**\n" +
+               "2. Browse around for a few minutes\n" +
+               "3. Run `/track test` again\n\n" +
+               "**Why enable tracking?**\n" +
+               "• Get contextual responses based on your browsing\n" +
+               "• More relevant assistance for your current work\n" +
+               "• Smart understanding of your workflow\n\n" +
+               "Try asking questions related to what you're working on!";
+      }
+      
+      if (browserTracker.current) {
+        const stats = browserTracker.current.getTrackingStats();
+        const activities = browserTracker.current.getStoredActivities();
+        const recentActivities = browserTracker.current.getRecentActivities(10);
+        const contextSummary = browserTracker.current.getActivitySummary(30);
+        
+        let response = "🧪 **Browser Tracking Test Results:**\n\n";
+        
+        response += "**📊 Tracking Status:**\n";
+        response += `• **Enabled:** ${stats.isEnabled ? '✅ YES' : '❌ NO'}\n`;
+        response += `• **Active:** ${stats.isTracking ? '🟢 Collecting Data' : '🔴 Not Collecting'}\n`;
+        response += `• **Total Activities:** ${stats.totalActivities}\n`;
+        response += `• **Recent (1h):** ${stats.recentActivities}\n`;
+        response += `• **Storage:** ${(stats.storageSize / 1024).toFixed(2)} KB\n`;
+        response += `• **Session ID:** ${stats.sessionId}\n\n`;
+        
+        if (stats.oldestActivity) {
+          response += `• **First Activity:** ${new Date(stats.oldestActivity).toLocaleString()}\n`;
+        }
+        if (stats.newestActivity) {
+          response += `• **Latest Activity:** ${new Date(stats.newestActivity).toLocaleString()}\n\n`;
+        }
+        
+        response += "**🔍 Activity Context Summary:**\n";
+        response += contextSummary + "\n\n";
+        
+        if (recentActivities.length > 0) {
+          response += "**📝 Recent Activity Log:**\n";
+          recentActivities.slice(0, 5).forEach((activity, idx) => {
+            const time = new Date(activity.timestamp).toLocaleTimeString();
+            const type = activity.type.replace('_', ' ').toUpperCase();
+            const url = activity.data?.url || activity.data?.newUrl || '';
+            const domain = url ? new URL(url).hostname.replace('www.', '') : '';
+            response += `${idx + 1}. **[${time}]** ${type}`;
+            if (domain) response += ` on ${domain}`;
+            response += '\n';
+          });
+        } else {
+          response += "**📝 Recent Activities:** No activities detected\n";
+        }
+        
+        response += "\n**🎯 Test Your Context-Aware Chat:**\n";
+        response += "Now ask me questions related to:\n";
+        if (recentActivities.length > 0) {
+          const domains = [...new Set(recentActivities
+            .map(a => a.data?.url || a.data?.newUrl)
+            .filter(url => url)
+            .map(url => new URL(url).hostname.replace('www.', ''))
+          )].slice(0, 3);
+          
+          domains.forEach(domain => {
+            response += `• Something about ${domain}\n`;
+          });
+        }
+        response += "• Your current work or research\n";
+        response += "• Questions about what you've been browsing\n\n";
+        
+        response += "**💡 Commands:**\n";
+        response += "• `/tracking stats` - Detailed analytics\n";
+        response += "• `/history` - Open visual dashboard\n";
+        response += "• Press **Ctrl+H** for quick history access\n";
+        
+        return response;
+      }
+      
+      return "❌ Browser tracking system not initialized.";
+    }
+    
     return null;
   }
 
@@ -1080,6 +1159,48 @@ function ChatPage() {
     }
   }
 
+  // Enhanced browser tracking sync with backend
+  const syncActivitiesWithBackend = useCallback(async () => {
+    try {
+      const activities = BrowserActivityTracker.getActivities();
+      
+      if (activities.length === 0) {
+        return;
+      }
+      
+      // Convert activities to backend format
+      const formattedActivities = activities.map(activity => ({
+        activity_type: activity.type,
+        activity_data: activity.data,
+        timestamp: activity.timestamp,
+        session_id: activity.sessionId,
+        url: activity.data?.url || activity.data?.newUrl || window.location.href,
+        page_title: activity.data?.pageTitle || activity.data?.newTitle || document.title,
+        engagement_score: Math.random() * 10 // Simplified for now
+      }));
+      
+      // Send activities to backend
+      const response = await fetch(`${API_URL}/api/browser-tracking/activities`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ activities: formattedActivities })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`Synced ${result.stored_count} activities with backend`);
+        
+        // Clear synced activities from local storage
+        BrowserActivityTracker.clearData();
+      }
+    } catch (error) {
+      console.error('Failed to sync activities with backend:', error);
+    }
+  }, [getAuthHeaders]);
+
   // Render empty state
   const renderEmptyState = () => (
     <Box className="empty-state">
@@ -1125,128 +1246,109 @@ function ChatPage() {
     </Box>
   );
 
-  // Handle tracking state changes
-  const handleTrackingChange = (enabled) => {
+  // Enhanced browser tracking toggle with backend sync
+  const handleBrowserTrackingToggle = useCallback(async (enabled) => {
+    try {
+      console.log(`Toggling browser tracking: ${enabled}`);
+      setIsBrowserTrackingEnabled(enabled);
+      
+      // Update the tracker directly
+      if (browserTracker.current) {
+        if (enabled) {
+          browserTracker.current.enableTracking();
+        } else {
+          browserTracker.current.disableTracking();
+        }
+      }
+      
+      // Update backend preference if available
+      try {
+        const endpoint = enabled ? '/enable' : '/disable';
+        const response = await fetch(`${API_URL}/api/browser-tracking${endpoint}`, {
+          method: 'POST',
+          headers: getAuthHeaders()
+        });
+        
+        if (response.ok) {
+          console.log(`Backend tracking ${enabled ? 'enabled' : 'disabled'} successfully`);
+          // Sync any pending activities if enabling
+          if (enabled) {
+            setTimeout(syncActivitiesWithBackend, 1000);
+          }
+        } else {
+          console.warn('Backend update failed, but frontend state updated');
+        }
+      } catch (backendError) {
+        console.warn('Backend unavailable, using local state only:', backendError);
+      }
+      
+    } catch (error) {
+      console.error('Failed to toggle browser tracking:', error);
+      // Revert state on error
+      setIsBrowserTrackingEnabled(!enabled);
+    }
+  }, [getAuthHeaders, syncActivitiesWithBackend]);
+  
+  // Handle tracking state changes from the toggle component
+  const handleTrackingChange = useCallback((enabled) => {
+    console.log(`Tracking state changed: ${enabled}`);
     setIsBrowserTrackingEnabled(enabled);
     
-    if (enabled) {
-      console.log('Browser tracking enabled - Smart responses activated');
-    } else {
-      console.log('Browser tracking disabled - Basic responses only');
+    // Ensure browserTracker is in sync
+    if (browserTracker.current) {
+      const trackerEnabled = browserTracker.current.isTrackingEnabled();
+      if (trackerEnabled !== enabled) {
+        if (enabled) {
+          browserTracker.current.enableTracking();
+        } else {
+          browserTracker.current.disableTracking();
+        }
+      }
     }
-  };
+  }, []);
 
   // Initialize browser tracking from backend on mount
   useEffect(() => {
     const initializeBrowserTracking = async () => {
-      if (!user?.id) return;
+      if (!user?.id || !browserTracker.current) return;
       
       try {
-        // Get tracking status from backend
+        // Try to get tracking status from backend
         const response = await fetch(`${API_URL}/api/browser-tracking/status`, {
           headers: getAuthHeaders()
         });
         
         if (response.ok) {
           const data = await response.json();
-          const enabled = data.preferences?.browser_tracking_enabled || false;
-          setIsBrowserTrackingEnabled(enabled);
+          const backendEnabled = data.preferences?.browser_tracking_enabled || false;
           
-          // Initialize frontend tracker
-          BrowserActivityTracker.initialize(user.id, enabled);
-          
-          // If tracking is enabled, sync pending activities
-          if (enabled) {
-            syncActivitiesWithBackend();
+          // Use backend state if available, otherwise keep local state
+          if (backendEnabled !== isBrowserTrackingEnabled) {
+            console.log(`Syncing with backend: ${backendEnabled}`);
+            setIsBrowserTrackingEnabled(backendEnabled);
+            
+            if (backendEnabled) {
+              browserTracker.current.enableTracking();
+              // Sync pending activities
+              setTimeout(syncActivitiesWithBackend, 1000);
+            } else {
+              browserTracker.current.disableTracking();
+            }
           }
+        } else {
+          console.log('Backend unavailable, using local tracker state');
         }
       } catch (error) {
-        console.error('Failed to initialize browser tracking:', error);
-        // Fallback to localStorage
-        const localEnabled = BrowserActivityTracker.initialize(user.id);
-        setIsBrowserTrackingEnabled(localEnabled);
+        console.log('Failed to sync with backend, using local state:', error.message);
       }
     };
     
-    initializeBrowserTracking();
-  }, [user?.id]);
+    // Only initialize if we have a user and tracker
+    if (user?.id && browserTracker.current) {
+      initializeBrowserTracking();
+    }
+  }, [user?.id, getAuthHeaders, isBrowserTrackingEnabled, syncActivitiesWithBackend]);
 
-  // Enhanced browser tracking sync with backend
-  const syncActivitiesWithBackend = async () => {
-    try {
-      const activities = BrowserActivityTracker.getActivities();
-      
-      if (activities.length === 0) {
-        return;
-      }
-      
-      // Convert activities to backend format
-      const formattedActivities = activities.map(activity => ({
-        activity_type: activity.type,
-        activity_data: activity.data,
-        timestamp: activity.timestamp,
-        session_id: activity.sessionId,
-        url: activity.data?.url || activity.data?.newUrl || window.location.href,
-        page_title: activity.data?.pageTitle || activity.data?.newTitle || document.title,
-        engagement_score: Math.random() * 10 // Simplified for now
-      }));
-      
-      // Send activities to backend
-      const response = await fetch(`${API_URL}/api/browser-tracking/activities`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify({ activities: formattedActivities })
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        console.log(`Synced ${result.stored_count} activities with backend`);
-        
-        // Clear synced activities from local storage
-        BrowserActivityTracker.clearData();
-        setLastActivitySync(new Date().toISOString());
-      }
-    } catch (error) {
-      console.error('Failed to sync activities with backend:', error);
-    }
-  };
-  
-  // Enhanced browser tracking toggle with backend sync
-  const handleBrowserTrackingToggle = async (enabled) => {
-    try {
-      setIsBrowserTrackingEnabled(enabled);
-      
-      // Update backend preference
-      const endpoint = enabled ? '/enable' : '/disable';
-      const response = await fetch(`${API_URL}/api/browser-tracking${endpoint}`, {
-        method: 'POST',
-        headers: getAuthHeaders()
-      });
-      
-      if (response.ok) {
-        // Update frontend tracker
-        if (enabled) {
-          BrowserActivityTracker.enable();
-          // Sync any pending activities
-          setTimeout(syncActivitiesWithBackend, 1000);
-        } else {
-          BrowserActivityTracker.disable();
-        }
-        
-        console.log(`Browser tracking ${enabled ? 'enabled' : 'disabled'} successfully`);
-      } else {
-        throw new Error('Backend update failed');
-      }
-    } catch (error) {
-      console.error('Failed to toggle browser tracking:', error);
-      // Revert state on error
-      setIsBrowserTrackingEnabled(!enabled);
-    }
-  };
-  
   // Auto-sync activities periodically when tracking is enabled
   useEffect(() => {
     if (!isBrowserTrackingEnabled) return;
@@ -1256,7 +1358,7 @@ function ChatPage() {
     }, 30000); // Sync every 30 seconds
     
     return () => clearInterval(syncInterval);
-  }, [isBrowserTrackingEnabled]);
+  }, [isBrowserTrackingEnabled, syncActivitiesWithBackend]);
 
   // Enhanced keyboard shortcuts
   useEffect(() => {
@@ -1297,6 +1399,66 @@ function ChatPage() {
       return () => clearTimeout(timer);
     }
   }, [isBrowserTrackingEnabled]);
+
+  // Sub-chat/Thread functionality
+  const handleCreateSubChat = (message) => {
+    setSelectedMessageForThread(message);
+    setThreadTitle(`Thread: ${message.content.substring(0, 50)}...`);
+    setShowSubChatDialog(true);
+  };
+
+  const handleSubChatConfirm = async () => {
+    if (!selectedMessageForThread || !threadTitle.trim()) return;
+    
+    try {
+      setLoading(true);
+      
+      // Use the correct backend API endpoint for sub-conversations
+      const response = await axios.post(`${API_URL}/chat/conversations/${conversationId}/sub-conversations`, {
+        title: threadTitle.trim(),
+        inherit_context: false // Fresh sub-chat for faster responses
+      }, {
+        headers: getAuthHeaders(),
+        timeout: 10000 // 10 second timeout for fast response
+      });
+
+      if (response.data.success && response.data.conversation) {
+        const newConversationId = response.data.conversation.id;
+        
+        // Navigate to new sub-chat conversation immediately
+        window.location.href = `/?conversation=${newConversationId}`;
+        
+        // Show success message
+        setSuccess(response.data.message || 'Thread created successfully! 🧵');
+        
+        // Close dialog immediately
+        setShowSubChatDialog(false);
+        setSelectedMessageForThread(null);
+        setThreadTitle('');
+      } else {
+        throw new Error(response.data.error || 'Failed to create sub-chat');
+      }
+    } catch (error) {
+      console.error('Error creating sub-chat:', error);
+      
+      // Show user-friendly error
+      if (error.response?.status === 404) {
+        setError('Sub-chat feature is currently unavailable. Please try again later.');
+      } else if (error.response?.status === 401) {
+        setError('Please log in to create threads.');
+      } else {
+        setError('Failed to create thread. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubChatCancel = () => {
+    setShowSubChatDialog(false);
+    setSelectedMessageForThread(null);
+    setThreadTitle('');
+  };
 
   return (
     <Box className="chat-page-container">
@@ -1374,6 +1536,7 @@ function ChatPage() {
                 onRegenerate={handleRegenerate}
                 setMessages={setMessages}
                 setCanCancel={setCanCancel}
+                onCreateSubChat={handleCreateSubChat}
               />
             ))}
             <div ref={messagesEndRef} />
@@ -1559,6 +1722,27 @@ function ChatPage() {
         </Alert>
       </Snackbar>
 
+      {/* Success Message Snackbar */}
+      <Snackbar
+        open={!!success}
+        autoHideDuration={4000}
+        onClose={() => setSuccess('')}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSuccess('')} 
+          severity="success" 
+          sx={{ 
+            bgcolor: '#059669',
+            color: 'white',
+            '& .MuiAlert-icon': { color: 'white' },
+            fontWeight: 500
+          }}
+        >
+          {success}
+        </Alert>
+      </Snackbar>
+
       {/* Floating Action Button for Tracking Features */}
       {browserTracker.current && isBrowserTrackingEnabled && (
         <Tooltip title="Tracking History (Ctrl+H)" placement="left">
@@ -1629,7 +1813,7 @@ function ChatPage() {
                 key="toggle"
                 icon={<SettingsIcon />}
                 tooltipTitle="Toggle Tracking (Ctrl+T)"
-                onClick={() => setShowTrackingToggle(true)}
+                onClick={() => setShowBrowserTrackingHistory(true)}
                 sx={{
                   bgcolor: 'secondary.main',
                   color: 'white',
@@ -1654,45 +1838,110 @@ function ChatPage() {
       )}
 
       {/* Browser Tracking History Dialog */}
-      <BrowserTrackingHistory
-        open={showBrowserTrackingHistory}
-        onClose={() => setShowBrowserTrackingHistory(false)}
-        browserTracker={browserTracker.current}
-      />
-
-      {/* Keyboard Shortcuts Hint */}
-      {showKeyboardHint && !isMobile && (
-        <Box
-          className="keyboard-hint visible"
-          sx={{
-            position: 'fixed',
-            bottom: 80,
-            right: 80,
-            background: 'rgba(0, 0, 0, 0.9)',
-            color: 'white',
-            padding: '12px 16px',
-            borderRadius: '8px',
-            fontSize: '0.75rem',
-            zIndex: 1001,
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-            animation: 'slideInFromRight 0.3s ease-out',
-          }}
-        >
-          <Typography variant="caption" sx={{ fontWeight: 'bold', color: '#10b981' }}>
-            🎯 Quick Shortcuts
-          </Typography>
-          <br />
-          <Typography variant="caption">
-            <strong>Ctrl+H:</strong> View History
-          </Typography>
-          <br />
-          <Typography variant="caption">
-            <strong>Ctrl+T:</strong> Toggle Tracking
-          </Typography>
-        </Box>
+      {showBrowserTrackingHistory && (
+        <BrowserTrackingHistory 
+          open={showBrowserTrackingHistory}
+          onClose={() => setShowBrowserTrackingHistory(false)}
+          browserTracker={browserTracker.current}
+        />
       )}
+
+      {/* Sub-chat Creation Dialog */}
+      <Dialog 
+        open={showSubChatDialog} 
+        onClose={handleSubChatCancel}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.95) 100%)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          pb: 1,
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          fontWeight: 600,
+          fontSize: '1.25rem'
+        }}>
+          🧵 Create New Thread
+        </DialogTitle>
+        
+        <DialogContent sx={{ pt: 2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Create a new conversation thread starting from this message:
+          </Typography>
+          
+          {selectedMessageForThread && (
+            <Box sx={{ 
+              p: 2, 
+              bgcolor: 'rgba(102, 126, 234, 0.05)', 
+              borderRadius: 2, 
+              mb: 2,
+              border: '1px solid rgba(102, 126, 234, 0.1)'
+            }}>
+              <Typography variant="body2" sx={{ 
+                color: '#374151',
+                fontStyle: 'italic',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical'
+              }}>
+                "{selectedMessageForThread.content.substring(0, 200)}..."
+              </Typography>
+            </Box>
+          )}
+          
+          <TextField
+            autoFocus
+            fullWidth
+            label="Thread Title"
+            value={threadTitle}
+            onChange={(e) => setThreadTitle(e.target.value)}
+            variant="outlined"
+            sx={{ mt: 1 }}
+            placeholder="Enter a descriptive title for this thread..."
+          />
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button 
+            onClick={handleSubChatCancel}
+            sx={{ 
+              color: '#6b7280',
+              '&:hover': { bgcolor: 'rgba(107, 114, 128, 0.1)' }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSubChatConfirm}
+            disabled={!threadTitle.trim() || loading}
+            variant="contained"
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%)',
+                boxShadow: '0 6px 20px rgba(102, 126, 234, 0.6)',
+              },
+              '&:disabled': {
+                opacity: 0.6
+              }
+            }}
+          >
+            {loading ? <CircularProgress size={20} color="inherit" /> : 'Create Thread'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

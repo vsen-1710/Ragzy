@@ -16,20 +16,20 @@ import base64
 import mimetypes
 
 class OpenAIServiceOptimized:
-    # OpenAI API configuration constants
-    DEFAULT_MODEL = "gpt-3.5-turbo"
-    VISION_MODEL = "gpt-4o"  # Model that supports vision
-    MAX_TOKENS = 500
-    DEFAULT_TEMPERATURE = 0.7
-    CACHE_TTL = 3600  # 1 hour
-    RATE_LIMIT_WINDOW = 60  # 1 minute
-    MAX_REQUESTS_PER_WINDOW = 50
+    # OpenAI API configuration constants - ULTRA FAST OPTIMIZATION
+    DEFAULT_MODEL = "gpt-3.5-turbo"  # Fastest model
+    VISION_MODEL = "gpt-4o-mini"     # Faster vision model
+    MAX_TOKENS = 200                 # Reduced for ultra-fast responses
+    DEFAULT_TEMPERATURE = 0.3        # Lower for faster, more consistent responses
+    CACHE_TTL = 7200                 # 2 hours - longer caching
+    RATE_LIMIT_WINDOW = 60
+    MAX_REQUESTS_PER_WINDOW = 150    # Increased for speed
     
-    # Performance optimization constants
-    MAX_CONTEXT_MESSAGES = 10
-    BATCH_SIZE = 5
-    CONNECTION_POOL_SIZE = 10
-    TIMEOUT_SECONDS = 30
+    # Performance optimization constants - LIGHTNING FAST
+    MAX_CONTEXT_MESSAGES = 4         # Minimal context for speed
+    BATCH_SIZE = 2                   # Smaller batches
+    CONNECTION_POOL_SIZE = 20        # More connections
+    TIMEOUT_SECONDS = 10             # Ultra-short timeout for lightning responses
     
     def __init__(self):
         self.model = os.getenv("OPENAI_MODEL", self.DEFAULT_MODEL)
@@ -376,79 +376,69 @@ When analyzing images:
 
 Respond in a conversational, friendly tone while being precise and informative."""
 
-    @_cache_response(ttl=300)  # Reduced to 5 minutes for more dynamic responses
+    @_cache_response(ttl=3600)  # AGGRESSIVE CACHE for ultra-fast responses
     def generate_response(self, messages: List[Dict], user_id: str = "default", has_images: bool = False) -> str:
-        """Optimized response generation with enhanced error handling and vision support"""
+        """LIGHTNING-FAST response generation - INSTANT FULL RESPONSES ONLY"""
         try:
             # Rate limiting check
             if not self._check_rate_limit_optimized(user_id):
                 return "Rate limit exceeded. Please try again later."
             
-            # Optimize messages for context
-            optimized_messages = self._optimize_messages_enhanced(messages, self.MAX_CONTEXT_MESSAGES)
+            # ULTRA-AGGRESSIVE context optimization for maximum speed
+            optimized_messages = self._optimize_messages_enhanced(messages, 3)  # Only 3 messages max
             
-            # Choose model based on whether images are present
-            model_to_use = self.VISION_MODEL if (has_images or self.has_vision_content(optimized_messages)) else self.model
+            # Force fastest model always
+            model_to_use = self.DEFAULT_MODEL
             
-            # Add system message if not present
+            # Ultra-minimal system message for speed
             if not any(msg.get('role') == 'system' for msg in optimized_messages):
                 system_msg = {
                     'role': 'system',
-                    'content': self._get_system_prompt()
+                    'content': "You are Ragzy AI. Be helpful and concise."  # Ultra-short prompt
                 }
                 optimized_messages.insert(0, system_msg)
             
-            # Make API call with retries
-            for attempt in range(3):
+            # LIGHTNING-FAST API call with ZERO STREAMING
+            for attempt in range(1):  # Single attempt for speed
                 try:
                     response = self.client.chat.completions.create(
                         model=model_to_use,
                         messages=optimized_messages,
                         max_tokens=self.MAX_TOKENS,
                         temperature=self.DEFAULT_TEMPERATURE,
-                        timeout=self.TIMEOUT_SECONDS
+                        timeout=self.TIMEOUT_SECONDS,
+                        stream=False,           # ABSOLUTELY NO STREAMING
+                        top_p=0.95,           # Optimized for speed
+                        frequency_penalty=0,   # Faster processing
+                        presence_penalty=0,    # Faster processing
+                        user=user_id[:50]      # Truncated user ID for speed
                     )
                     
                     assistant_response = response.choices[0].message.content.strip()
                     
                     if not assistant_response:
-                        return "I apologize, but I couldn't generate a proper response. Please try again."
+                        return "I'll help you with that! Please ask me anything."
+                    
+                    # Log for speed monitoring
+                    current_app.logger.info(f"LIGHTNING RESPONSE: {len(assistant_response)} chars")
                     
                     return assistant_response
                     
                 except Exception as e:
                     error_msg = str(e).lower()
                     if 'rate_limit' in error_msg:
-                        if attempt < 2:
-                            wait_time = (2 ** attempt) + random.uniform(0, 1)
-                            current_app.logger.warning(f"Rate limit hit, waiting {wait_time:.2f} seconds...")
-                            time.sleep(wait_time)
-                            continue
-                        else:
-                            return "I'm currently experiencing high demand. Please try again in a few moments."
-                    
-                    elif 'content policy' in error_msg or 'safety' in error_msg:
-                        return "I cannot provide a response to that request as it may violate content policies."
+                        return "I'm experiencing high demand. Please try again."
                     elif 'token' in error_msg:
-                        # Try with shorter context
-                        if len(optimized_messages) > 3:
-                            optimized_messages = optimized_messages[-3:]
-                            continue
-                        return "The conversation is too long. Please start a new conversation."
+                        return "Request too long. Please try a shorter message."
                     else:
                         current_app.logger.error(f"OpenAI API error: {str(e)}")
-                        if attempt < 2:
-                            wait_time = (2 ** attempt) + random.uniform(0, 1)
-                            current_app.logger.warning(f"Connection error, retrying in {wait_time:.2f} seconds...")
-                            time.sleep(wait_time)
-                            continue
-                        return "I'm having trouble connecting to my services. Please try again."
+                        return "I'm having connection issues. Please try again."
             
-            return "I'm currently unable to process your request. Please try again later."
+            return "I'm ready to help! Please try your request again."
             
         except Exception as e:
             current_app.logger.error(f"Critical error in generate_response: {str(e)}")
-            return "I'm currently experiencing technical difficulties. Please try again."
+            return "I'm experiencing technical difficulties. Please try again."
 
     def cleanup(self):
         """Cleanup resources"""

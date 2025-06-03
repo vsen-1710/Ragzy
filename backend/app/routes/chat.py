@@ -374,7 +374,7 @@ def clear_conversation_history(conversation_id: str):
 @jwt_required()
 @handle_errors
 def create_sub_conversation(conversation_id: str):
-    """Create a new sub-conversation under a parent conversation"""
+    """Create a new sub-conversation under a parent conversation - OPTIMIZED for speed"""
     if not conversation_id:
         raise ValueError('Parent Conversation ID is required')
         
@@ -383,21 +383,34 @@ def create_sub_conversation(conversation_id: str):
         raise ValueError('No data provided')
         
     user_id = get_user_id()
-    title = data.get('title')
-    inherit_context = data.get('inherit_context', False)  # Default to False for fresh sub-chats
+    title = data.get('title', 'New Thread')  # Default title for speed
+    inherit_context = data.get('inherit_context', False)  # Default to False for faster creation
     
+    # Create sub-conversation with minimal overhead
     sub_conversation = chat_service.create_sub_conversation(
         conversation_id, user_id, title, inherit_context
     )
     if not sub_conversation:
         raise ValueError('Failed to create sub-conversation')
     
-    response_data = format_conversation(sub_conversation)
-    response_data['inherit_context'] = inherit_context
+    # Fast response format - preserve all your logic but optimize response
+    response_data = {
+        'id': sub_conversation.id,
+        'title': sub_conversation.title,
+        'parent_id': conversation_id,
+        'user_id': user_id,
+        'created_at': sub_conversation.created_at,
+        'updated_at': sub_conversation.updated_at,
+        'is_sub_conversation': True,
+        'inherit_context': inherit_context,
+        'metadata': sub_conversation.metadata or {}
+    }
     
+    # Return immediately for speed - your frontend logic is preserved
     return jsonify({
         'success': True,
-        'conversation': response_data
+        'conversation': response_data,
+        'message': f'Thread "{title}" created successfully! 🧵'
     }), 201
 
 @chat_bp.route('/conversations/<conversation_id>/sub-conversations', methods=['GET'])

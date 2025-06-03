@@ -66,17 +66,21 @@ const BrowserTrackingToggle = ({ browserTracker, onTrackingChange }) => {
   const handleToggleTracking = async () => {
     if (!browserTracker) return;
 
-    if (isEnabled) {
-      // Turning off - show confirmation
-      setShowConfirm(true);
-    } else {
+    const newState = !isEnabled;
+    
+    if (newState) {
       // Turning on - enable immediately
       browserTracker.enableTracking();
       setIsEnabled(true);
       updateStats();
+      
+      // Notify parent component
       if (onTrackingChange) {
         onTrackingChange(true);
       }
+    } else {
+      // Turning off - show confirmation
+      setShowConfirm(true);
     }
   };
 
@@ -86,6 +90,8 @@ const BrowserTrackingToggle = ({ browserTracker, onTrackingChange }) => {
       setIsEnabled(false);
       setTrackingStats(null);
       setShowConfirm(false);
+      
+      // Notify parent component
       if (onTrackingChange) {
         onTrackingChange(false);
       }

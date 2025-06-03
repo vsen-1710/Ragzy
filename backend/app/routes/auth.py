@@ -21,7 +21,7 @@ ALLOWED_ORIGINS = [
 ]
 
 CORS_HEADERS = {
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin, X-Force-Fast-Response, X-No-Streaming',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '3600',

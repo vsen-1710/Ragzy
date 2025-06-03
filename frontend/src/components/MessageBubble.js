@@ -3,7 +3,8 @@ import { Box, Typography, Avatar, IconButton, Tooltip } from '@mui/material';
 import { 
   ContentCopy as ContentCopyIcon, 
   Image as ImageIcon,
-  Refresh as RefreshIcon 
+  Refresh as RefreshIcon,
+  CallSplit as CallSplitIcon  // Add sub-chat icon
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -11,7 +12,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ThinkingIndicator from './ThinkingIndicator';
 import StreamingText from './StreamingText';
 
-const MessageBubble = ({ msg, onCopy, onStreamingComplete, onRegenerate, setMessages, setCanCancel }) => {
+const MessageBubble = ({ msg, onCopy, onStreamingComplete, onRegenerate, setMessages, setCanCancel, onCreateSubChat }) => {
   const isUser = msg.role === 'user';
   
   // Function to find the previous user message for regeneration
@@ -66,6 +67,35 @@ const MessageBubble = ({ msg, onCopy, onStreamingComplete, onRegenerate, setMess
                     minute: '2-digit' 
                   })}
                 </Typography>
+
+                {/* User message actions - subtle */}
+                {onCreateSubChat && (
+                  <Box className="user-message-actions" sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'flex-end', 
+                    mt: 0.5, 
+                    opacity: 0.7,
+                    '&:hover': { opacity: 1 }
+                  }}>
+                    <Tooltip title="Create thread from this message">
+                      <IconButton
+                        size="small"
+                        onClick={() => onCreateSubChat(msg)}
+                        sx={{
+                          color: '#6b7280',
+                          width: 24,
+                          height: 24,
+                          '&:hover': {
+                            color: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                          },
+                        }}
+                      >
+                        <CallSplitIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                )}
               </Box>
 
               <Box className="user-avatar-container">
@@ -199,6 +229,29 @@ const MessageBubble = ({ msg, onCopy, onStreamingComplete, onRegenerate, setMess
                           }}
                         >
                           <RefreshIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+
+                    {/* Sub-chat Button - only show for completed messages */}
+                    {!msg.isStreaming && !msg.isTyping && onCreateSubChat && (
+                      <Tooltip title="Create thread from this message">
+                        <IconButton
+                          className="subchat-button"
+                          onClick={() => onCreateSubChat(msg)}
+                          sx={{
+                            color: '#6b7280',
+                            width: 28,
+                            height: 28,
+                            '&:hover': {
+                              color: '#3b82f6',
+                              backgroundColor: '#f1f5f9',
+                              transform: 'scale(1.1)',
+                            },
+                            transition: 'all 0.3s ease',
+                          }}
+                        >
+                          <CallSplitIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                     )}

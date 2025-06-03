@@ -54,7 +54,7 @@ def create_app(config_class=Config):
              r"/*": {
                  "origins": "*",  # Allow all origins for now, we'll validate in the headers
                  "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                 "allow_headers": ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With", "Accept", "Origin"],
+                 "allow_headers": ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With", "Accept", "Origin", "X-Force-Fast-Response", "X-No-Streaming"],
                  "supports_credentials": True,
                  "expose_headers": ["Content-Type", "Authorization", "Set-Cookie"],
                  "max_age": 3600,
@@ -83,7 +83,7 @@ def create_app(config_class=Config):
         if origin and origin in allowed_origins:
             response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With, X-Force-Fast-Response, X-No-Streaming'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
             response.headers['Access-Control-Max-Age'] = '86400'
         
@@ -124,7 +124,7 @@ def create_app(config_class=Config):
             else:
                 response.headers.add("Access-Control-Allow-Origin", "*")
                 
-            response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin")
+            response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin, X-Force-Fast-Response, X-No-Streaming")
             response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
             response.headers.add("Access-Control-Allow-Credentials", "true")
             response.headers.add("Access-Control-Max-Age", "3600")
