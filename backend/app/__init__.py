@@ -52,15 +52,21 @@ def create_app(config_class=Config):
     CORS(app, 
          resources={
              r"/*": {
-                 "origins": "*",  # Allow all origins for now, we'll validate in the headers
+                 "origins": [
+                     "http://localhost:3000",
+                     "http://localhost:3001", 
+                     "http://127.0.0.1:3000",
+                     "http://127.0.0.1:3001",
+                     "https://ragzy.onrender.com",
+                     "http://ragzy.duckdns.org:8080"
+                 ],
                  "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                  "allow_headers": ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With", "Accept", "Origin", "X-Force-Fast-Response", "X-No-Streaming"],
                  "supports_credentials": True,
                  "expose_headers": ["Content-Type", "Authorization", "Set-Cookie"],
                  "max_age": 3600,
                  "send_wildcard": False,
-                 "vary_header": True,
-                 "always_send": True
+                 "vary_header": True
              }
          })
     
@@ -80,13 +86,25 @@ def create_app(config_class=Config):
             'http://ragzy.duckdns.org:8080'
         ]
         
-        # Set CORS headers for localhost development
+        # Check if origin is valid
+        origin_allowed = False
         if origin and origin in allowed_origins:
+            origin_allowed = True
+        
+        # Set CORS headers properly for credentials
+        if origin_allowed and origin:
             response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With, X-Force-Fast-Response, X-No-Streaming'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
             response.headers['Access-Control-Max-Age'] = '86400'
+            response.headers['Vary'] = 'Origin'
+        elif origin:
+            # Origin provided but not in allowed list - still set origin but no credentials
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With, X-Force-Fast-Response, X-No-Streaming'
+            response.headers['Vary'] = 'Origin'
         
         # Security headers (simplified for local development)
         response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -107,32 +125,35 @@ def create_app(config_class=Config):
             # Define allowed origins
             allowed_origins = [
                 'http://localhost:3000',
-                'https://ragzy.onrender.com',
                 'http://localhost:3001',
+                'http://127.0.0.1:3000',
+                'http://127.0.0.1:3001',
+                'https://ragzy.onrender.com',
                 'http://ragzy.duckdns.org:8080'
             ]
             
             # Check if origin is valid
             origin_allowed = False
-            if origin:
-                if origin in allowed_origins:
-                    origin_allowed = True
-                elif '.ngrok.io' in origin or '.ngrok-free.app' in origin:
-                    origin_allowed = True
+            if origin and origin in allowed_origins:
+                origin_allowed = True
             
-            # Set CORS headers
+            # Set CORS headers - only set specific origin when credentials are involved
             if origin_allowed and origin:
                 response.headers.add("Access-Control-Allow-Origin", origin)
+                response.headers.add("Access-Control-Allow-Credentials", "true")
+            elif origin:
+                # If origin is provided but not allowed, still set it (but don't allow credentials)
+                response.headers.add("Access-Control-Allow-Origin", origin)
+                # Don't set credentials for unknown origins
             else:
+                # No origin header - fallback but without credentials
                 response.headers.add("Access-Control-Allow-Origin", "*")
                 
             response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, X-Requested-With, Accept, Origin, X-Force-Fast-Response, X-No-Streaming")
             response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-            response.headers.add("Access-Control-Allow-Credentials", "true")
             response.headers.add("Access-Control-Max-Age", "3600")
             response.headers.add("Vary", "Origin")
             
-            # Don't add restrictive Cross-Origin policies for preflight
             return response
     
     # Initialize extensions with app
