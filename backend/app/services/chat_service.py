@@ -105,7 +105,7 @@ class ChatServiceOptimized:
             hierarchy_data = {
                 'main_chat_id': main_chat_id,
                 'user_id': user_id,
-                'created_at': datetime.utcnow().isoformat()
+                'created_at': datetime.utcnow().isoformat() + 'Z'
             }
             self.redis_service.redis.setex(
                 sub_chat_key,
@@ -231,7 +231,7 @@ class ChatServiceOptimized:
             message_data = {
                 'role': role,
                 'content': content,
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.utcnow().isoformat() + 'Z',
                 'message_id': message.id,
                 'main_chat_id': main_chat_id,
                 'sub_chat_id': conversation_id if conversation_id != main_chat_id else None
@@ -415,7 +415,7 @@ class ChatServiceOptimized:
                 return None
             
             # Use custom timestamp or current time
-            message_timestamp = timestamp or datetime.utcnow().isoformat()
+            message_timestamp = timestamp or datetime.utcnow().isoformat() + 'Z'
             
             # Create message in Weaviate with custom timestamp
             message = MessageModel.create(
@@ -855,51 +855,102 @@ class ChatServiceOptimized:
             return "New Conversation"
 
     def generate_response(self, conversation_id: str, user_message: str) -> Optional[MessageModel]:
-        """Generate AI response with enhanced context from all related sub-chats and auto-generate title"""
+        """Generate AI response with enhanced context from all related sub-chats and browser search context"""
         try:
             conversation = self.get_conversation(conversation_id)
             if not conversation:
                 logger.error(f"Conversation {conversation_id} not found for response generation")
                 return None
             
+            # Extract browser context and search information from the user message
+            browser_context = None
+            search_context = None
+            clean_user_message = user_message
+            
+            # Parse browser context from message if present
+            if '[SEARCH CONTEXT]:' in user_message:
+                try:
+                    # Extract search context
+                    import re
+                    search_match = re.search(r'\[SEARCH CONTEXT\]: User recently searched for "([^"]+)" on ([^(]+) \(([^)]+)\)', user_message)
+                    if search_match:
+                        search_context = {
+                            'query': search_match.group(1),
+                            'domain': search_match.group(2).strip(),
+                            'time_ago': search_match.group(3),
+                            'is_contextual': '[CONTEXT HINT]:' in user_message
+                        }
+                        
+                        # Extract recent searches if available
+                        recent_searches_match = re.search(r'\[RECENT SEARCHES\]: ([^\n]+)', user_message)
+                        if recent_searches_match:
+                            search_context['recent_searches'] = [s.strip() for s in recent_searches_match.group(1).split(',')]
+                    
+                    # Extract the actual user message
+                    user_msg_match = re.search(r'\[USER MESSAGE\]: ([^\n]+)', user_message)
+                    if user_msg_match:
+                        clean_user_message = user_msg_match.group(1)
+                        
+                    logger.info(f"Extracted search context: {search_context}")
+                    
+                except Exception as e:
+                    logger.warning(f"Error parsing browser context: {str(e)}")
+            
             # Add user message first using hierarchy-aware storage
-            user_msg = self.add_message(conversation_id, 'user', user_message)
+            user_msg = self.add_message(conversation_id, 'user', clean_user_message)
             if not user_msg:
                 logger.error(f"Failed to add user message to conversation {conversation_id}")
                 return None
-            
-            # Get enhanced context including all sub-chats under the same main chat
-            context_messages = self.get_conversation_context(
-                conversation_id,
-                limit=self.max_context_messages,
-                include_all_sub_chats=True
+                
+            # Get comprehensive conversation context with hierarchy awareness
+            context_messages = self._get_enhanced_conversation_context(
+                conversation_id, 
+                conversation.parent_id,
+                include_search_context=bool(search_context)
             )
             
-            # Add enhanced system message for better context handling with inheritance
+            # Enhanced system message with search context awareness
+            system_content = (
+                "You are Ragzy, a helpful AI assistant with access to comprehensive conversation history and user's browser search context. "
+                "Follow these guidelines strictly:\n"
+                "1. Use ALL available context from conversations and search activity to provide relevant responses\n"
+                "2. When users ask contextual questions like 'which is best?', 'what do you recommend?', or 'compare these', "
+                "   refer to their recent search queries to understand what they're asking about\n"
+                "3. Provide specific, actionable advice based on search context\n"
+                "4. Maintain continuity across conversation threads\n"
+                "5. Be friendly, helpful, and conversational like ChatGPT\n"
+                "6. If you see search context, prioritize that information in your response\n"
+            )
+            
+            # Add search context to system message if available
+            if search_context:
+                system_content += f"\n\nCURRENT SEARCH CONTEXT:\n"
+                if search_context.get('query'):
+                    system_content += f"- User recently searched for: '{search_context['query']}'\n"
+                if search_context.get('is_contextual'):
+                    system_content += f"- This appears to be a contextual question about their search\n"
+                if search_context.get('recent_searches'):
+                    system_content += f"- Recent search topics: {', '.join(search_context['recent_searches'])}\n"
+                system_content += "\nUse this search context to provide relevant, specific advice.\n"
+            
+            # Get additional browser context from tracking service if available
+            try:
+                browser_activity_context = browser_tracking_service.generate_chat_context(conversation.user_id, 2)
+                if browser_activity_context:
+                    system_content += f"\n\nBROWSER ACTIVITY CONTEXT:\n{browser_activity_context}\n"
+            except Exception as e:
+                logger.warning(f"Could not get browser activity context: {str(e)}")
+            
             enhanced_system_message = {
                 'role': 'system',
-                'content': (
-                    "You are a helpful AI assistant with access to comprehensive conversation history from related chats. "
-                    "This conversation may be a sub-chat that inherits full context from its parent conversation. "
-                    "Follow these guidelines strictly:\n"
-                    "1. Use ALL available context from parent and related conversations to understand the user's identity, preferences, and previous discussions\n"
-                    "2. Maintain continuity - if the user mentioned their name, background, or preferences in parent conversations, remember and use that information\n"
-                    "3. Answer questions based on the complete conversation history, not just the current chat\n"
-                    "4. When asked about identity ('who am I', 'what's my name', etc.), refer to information from the entire conversation tree\n"
-                    "5. Provide contextual responses that acknowledge previous interactions and established relationships\n"
-                    "6. If referencing information from parent conversations, you can naturally incorporate it without explicitly mentioning the source\n"
-                    "7. Treat this as a continuous conversation experience across all related chat threads\n"
-                    "8. Maintain consistency in addressing the user based on how they've been addressed in parent conversations\n"
-                    "9. Even if this sub-chat appears clean with no visible history, you have complete access to all parent conversation context\n"
-                    "10. Act as if you remember everything from previous conversations, even if the chat history appears empty to the user"
-                )
+                'content': system_content
             }
             context_messages.insert(0, enhanced_system_message)
             
             # Add the current user message at the end to ensure it's the most recent context
             context_messages.append({
                 'role': 'user',
-                'content': user_message
+                'content': clean_user_message
             })
             
             # Generate AI response with enhanced context
@@ -909,7 +960,11 @@ class ChatServiceOptimized:
             )
             
             if not ai_response:
-                ai_response = "I apologize, but I'm having trouble responding right now. Please try again."
+                # Fallback response with search context if available
+                if search_context and search_context.get('query'):
+                    ai_response = f"I'd be happy to help you with '{search_context['query']}'. Could you provide more specific details about what you're looking for?"
+                else:
+                    ai_response = "I apologize, but I'm having trouble responding right now. Please try again."
             
             # Add AI response using hierarchy-aware storage
             assistant_msg = self.add_message(conversation_id, 'assistant', ai_response)
@@ -920,7 +975,8 @@ class ChatServiceOptimized:
                 len(conversation.title.strip()) == 0):
                 
                 # Generate meaningful title from first user message with context awareness
-                generated_title = self._generate_contextual_chat_title(user_message, context_messages)
+                title_message = search_context.get('query', clean_user_message) if search_context else clean_user_message
+                generated_title = self._generate_contextual_chat_title(title_message, context_messages)
                 if generated_title != "New Conversation":
                     conversation.title = generated_title
                     conversation.save()
@@ -938,7 +994,7 @@ class ChatServiceOptimized:
                     }
                     self.redis_service.cache_conversation_metadata(conversation.id, metadata)
             
-            logger.info(f"Generated response for conversation {conversation_id} with full context")
+            logger.info(f"Generated response for conversation {conversation_id} with search context: {bool(search_context)}")
             return assistant_msg
             
         except Exception as e:
@@ -1776,6 +1832,47 @@ class ChatServiceOptimized:
         except Exception as e:
             logger.error(f"Critical error in generate_response_with_vision: {str(e)}")
             return None
+
+    def _get_enhanced_conversation_context(self, conversation_id: str, parent_id: str = None, include_search_context: bool = False) -> List[Dict]:
+        """Get enhanced conversation context with search context integration"""
+        try:
+            # Get regular conversation context
+            context_messages = self.get_conversation_context(
+                conversation_id, 
+                limit=self.max_context_messages,
+                include_all_sub_chats=True
+            )
+            
+            # If search context is being used, add browser tracking context
+            if include_search_context:
+                try:
+                    # Get the conversation to find user_id
+                    conversation = self.get_conversation(conversation_id)
+                    if conversation:
+                        # Get recent browser activity summary
+                        browser_context = browser_tracking_service.generate_chat_context(conversation.user_id, 1)
+                        if browser_context:
+                            # Add browser context as a system message in the conversation flow
+                            browser_system_msg = {
+                                'role': 'system', 
+                                'content': f"BROWSER ACTIVITY CONTEXT:\n{browser_context}"
+                            }
+                            # Insert browser context after any existing system messages but before user messages
+                            insert_index = 0
+                            for i, msg in enumerate(context_messages):
+                                if msg.get('role') != 'system':
+                                    insert_index = i
+                                    break
+                            context_messages.insert(insert_index, browser_system_msg)
+                            
+                except Exception as e:
+                    logger.warning(f"Could not integrate browser context: {str(e)}")
+            
+            return context_messages
+            
+        except Exception as e:
+            logger.error(f"Error getting enhanced conversation context: {str(e)}")
+            return []
 
 # Alias for backward compatibility
 ChatService = ChatServiceOptimized 

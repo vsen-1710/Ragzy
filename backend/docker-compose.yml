@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   weaviate:
@@ -14,6 +13,7 @@ services:
       CLUSTER_HOSTNAME: 'node1'
     volumes:
       - weaviate_data:/var/lib/weaviate
+    restart: unless-stopped   # ✅ added for better reliability
 
   redis:
     image: redis:7-alpine
@@ -40,21 +40,21 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - FLASK_ENV=development
-      - WEAVIATE_URL=http://weaviate:8080
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
+      FLASK_ENV: development
+      WEAVIATE_URL: http://weaviate:8080
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
     volumes:
       - ./app:/app/app
       - ./run.py:/app/run.py
-      - ./.env:/app/.env
       - ./client_secret.json:/app/client_secret.json
+    env_file:
+      - .env   # ✅ keep this, remove the .env mount below
     depends_on:
       - weaviate
       - redis
-    env_file:
-      - .env
+    restart: unless-stopped   # ✅ added for auto-restart on crash
 
 volumes:
   weaviate_data:

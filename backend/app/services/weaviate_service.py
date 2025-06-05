@@ -101,6 +101,9 @@ class WeaviateServiceOptimized:
                 "properties": [
                     {"name": "username", "dataType": ["text"], "description": "Username"},
                     {"name": "email", "dataType": ["text"], "description": "Email address"},
+                    {"name": "password_hash", "dataType": ["text"], "description": "Hashed password for manual authentication"},
+                    {"name": "auth_provider", "dataType": ["text"], "description": "Authentication provider (manual, google)"},
+                    {"name": "email_verified", "dataType": ["boolean"], "description": "Whether email is verified"},
                     {"name": "google_id", "dataType": ["text"], "description": "Original Google user ID"},
                     {"name": "created_at", "dataType": ["date"], "description": "Creation timestamp"},
                     {"name": "is_active", "dataType": ["boolean"], "description": "Whether user is active"},

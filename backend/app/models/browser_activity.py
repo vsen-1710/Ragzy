@@ -14,7 +14,7 @@ class BrowserActivityModel:
         self.activity_data = activity_data or {}
         self.url = url
         self.page_title = page_title
-        self.timestamp = timestamp or datetime.utcnow().isoformat()
+        self.timestamp = timestamp or datetime.utcnow().isoformat() + 'Z'
         self.session_id = session_id
         self.engagement_score = engagement_score
     
@@ -29,7 +29,7 @@ class BrowserActivityModel:
             'activity_data': json.dumps(activity_data),
             'url': url or '',
             'page_title': page_title or '',
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
             'session_id': session_id or str(uuid.uuid4()),
             'engagement_score': engagement_score
         }
@@ -53,7 +53,7 @@ class BrowserActivityModel:
         from datetime import datetime, timedelta
         
         # Calculate cutoff time
-        cutoff_time = (datetime.utcnow() - timedelta(hours=hours_back)).isoformat()
+        cutoff_time = (datetime.utcnow() - timedelta(hours=hours_back)).isoformat() + 'Z'
         
         where_filter = {
             "operator": "And",
@@ -169,41 +169,103 @@ class BrowserActivityModel:
     @classmethod
     def delete_old_activities(cls, user_id: str, days_old: int = 30) -> int:
         """Delete activities older than specified days"""
-        from datetime import datetime, timedelta
-        
-        cutoff_time = (datetime.utcnow() - timedelta(days=days_old)).isoformat()
-        
-        where_filter = {
-            "operator": "And",
-            "operands": [
-                {
+        try:
+            from datetime import datetime, timedelta
+            
+            cutoff_time = (datetime.utcnow() - timedelta(days=days_old)).isoformat() + 'Z'
+            
+            where_filter = {
+                "operator": "And",
+                "operands": [
+                    {
+                        "path": ["user_id"],
+                        "operator": "Equal",
+                        "valueText": user_id
+                    },
+                    {
+                        "path": ["timestamp"],
+                        "operator": "LessThan",
+                        "valueText": cutoff_time
+                    }
+                ]
+            }
+            
+            try:
+                # Get activities to delete
+                old_activities = weaviate_service.query_objects(
+                    'BrowserActivity',
+                    where_filter=where_filter,
+                    additional=['id']
+                )
+                
+                # Delete each activity
+                deleted_count = 0
+                for activity in old_activities:
+                    try:
+                        activity_id = activity.get('_additional', {}).get('id')
+                        if activity_id and weaviate_service.delete_object('BrowserActivity', activity_id):
+                            deleted_count += 1
+                    except Exception as delete_error:
+                        print(f"Error deleting old activity {activity_id}: {delete_error}")
+                        continue
+                
+                return deleted_count
+                
+            except Exception as query_error:
+                print(f"Error querying old activities: {query_error}")
+                return 0
+                
+        except Exception as e:
+            print(f"Error in delete_old_activities: {e}")
+            return 0
+    
+    @classmethod
+    def clear_user_activities(cls, user_id: str, days_old: int = None) -> int:
+        """Clear user activities - delete all or activities older than specified days"""
+        try:
+            if days_old is not None:
+                # Delete activities older than specified days
+                return cls.delete_old_activities(user_id, days_old)
+            else:
+                # Delete all activities for the user
+                where_filter = {
                     "path": ["user_id"],
                     "operator": "Equal",
                     "valueText": user_id
-                },
-                {
-                    "path": ["timestamp"],
-                    "operator": "LessThan",
-                    "valueText": cutoff_time
                 }
-            ]
-        }
-        
-        # Get activities to delete
-        old_activities = weaviate_service.query_objects(
-            'BrowserActivity',
-            where_filter=where_filter,
-            additional=['id']
-        )
-        
-        # Delete each activity
-        deleted_count = 0
-        for activity in old_activities:
-            activity_id = activity.get('_additional', {}).get('id')
-            if activity_id and weaviate_service.delete_object('BrowserActivity', activity_id):
-                deleted_count += 1
-        
-        return deleted_count
+                
+                try:
+                    # Get all activities to delete
+                    all_activities = weaviate_service.query_objects(
+                        'BrowserActivity',
+                        where_filter=where_filter,
+                        additional=['id'],
+                        limit=10000  # Large limit to get all activities
+                    )
+                    
+                    # Delete each activity
+                    deleted_count = 0
+                    for activity in all_activities:
+                        try:
+                            activity_id = activity.get('_additional', {}).get('id')
+                            if activity_id and weaviate_service.delete_object('BrowserActivity', activity_id):
+                                deleted_count += 1
+                        except Exception as delete_error:
+                            # Log individual delete errors but continue
+                            print(f"Error deleting individual activity {activity_id}: {delete_error}")
+                            continue
+                    
+                    return deleted_count
+                    
+                except Exception as query_error:
+                    print(f"Error querying activities for deletion: {query_error}")
+                    # Return 0 if we can't query/delete, but don't raise an exception
+                    return 0
+                    
+        except Exception as e:
+            print(f"Error in clear_user_activities: {e}")
+            # Don't raise the exception, return 0 to indicate no activities were cleared
+            return 0
     
     def save(self) -> bool:
         """Update activity data"""

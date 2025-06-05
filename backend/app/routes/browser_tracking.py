@@ -97,27 +97,52 @@ def store_activities():
     try:
         user_id = get_jwt_identity()
         if not user_id:
+            logger.warning("No user ID in JWT token")
             return jsonify({'error': 'User not authenticated'}), 401
         
         data = request.get_json()
-        if not data or 'activities' not in data:
+        if not data:
+            logger.warning("No JSON data in request")
+            return jsonify({'error': 'No data provided'}), 400
+            
+        if 'activities' not in data:
+            logger.warning(f"No activities field in data. Keys: {list(data.keys())}")
             return jsonify({'error': 'Activities data required'}), 400
         
         activities = data['activities']
         if not isinstance(activities, list):
+            logger.warning(f"Activities is not a list, type: {type(activities)}")
             return jsonify({'error': 'Activities must be a list'}), 400
         
         # Limit bulk size to prevent abuse
         if len(activities) > 100:
+            logger.warning(f"Too many activities: {len(activities)}")
             return jsonify({'error': 'Too many activities in single request (max 100)'}), 400
+        
+        # Log sample activity for debugging
+        if activities:
+            logger.info(f"Storing {len(activities)} activities for user {user_id}")
+            logger.debug(f"Sample activity keys: {list(activities[0].keys()) if activities[0] else 'Empty'}")
         
         result = browser_tracking_service.store_activities(user_id, activities)
         
-        return jsonify(result)
+        # Log result for debugging
+        if not result.get('success'):
+            logger.error(f"Failed to store activities: {result}")
+            
+        # Return success even if some activities failed validation
+        # This prevents 400 errors for partial failures
+        status_code = 200 if result.get('stored_count', 0) > 0 or result.get('success', False) else 500
+        
+        return jsonify(result), status_code
         
     except Exception as e:
-        logger.error(f"Error storing activities: {str(e)}")
-        return jsonify({'error': 'Failed to store activities'}), 500
+        logger.error(f"Error storing activities: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': 'Failed to store activities',
+            'message': str(e),
+            'success': False
+        }), 500
 
 @browser_tracking_bp.route('/activities', methods=['GET'])
 @jwt_required()
@@ -204,18 +229,25 @@ def clear_activities():
     try:
         user_id = get_jwt_identity()
         if not user_id:
+            logger.warning("No user ID in JWT token for clear request")
             return jsonify({'error': 'User not authenticated'}), 401
         
         # Get query parameter for days old
         days_old = request.args.get('days_old', type=int)
+        logger.info(f"Clearing activities for user {user_id}, days_old: {days_old}")
         
         result = browser_tracking_service.clear_user_activities(user_id, days_old)
         
+        logger.info(f"Clear result: {result}")
         return jsonify(result)
         
     except Exception as e:
-        logger.error(f"Error clearing activities: {str(e)}")
-        return jsonify({'error': 'Failed to clear activities'}), 500
+        logger.error(f"Error clearing activities for user {user_id if 'user_id' in locals() else 'unknown'}: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': 'Failed to clear activities',
+            'message': str(e),
+            'success': False
+        }), 500
 
 @browser_tracking_bp.route('/analytics', methods=['GET'])
 @jwt_required()

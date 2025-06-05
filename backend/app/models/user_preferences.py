@@ -2,6 +2,9 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from app.services.weaviate_service import weaviate_service
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 class UserPreferencesModel:
     def __init__(self, pref_id: str = None, user_id: str = None, 
@@ -40,8 +43,8 @@ class UserPreferencesModel:
             'user_id': user_id,
             'browser_tracking_enabled': browser_tracking_enabled,
             'tracking_settings': json.dumps(final_settings),
-            'created_at': datetime.utcnow().isoformat(),
-            'updated_at': datetime.utcnow().isoformat()
+            'created_at': datetime.utcnow().isoformat() + 'Z',
+            'updated_at': datetime.utcnow().isoformat() + 'Z'
         }
         
         pref_id = weaviate_service.create_object('UserPreferences', properties)
@@ -96,16 +99,44 @@ class UserPreferencesModel:
         return cls.create(user_id)
     
     def update_tracking_enabled(self, enabled: bool) -> bool:
-        """Update browser tracking enabled status"""
-        self.browser_tracking_enabled = enabled
-        self.updated_at = datetime.utcnow().isoformat()
-        return self.save()
+        """Update tracking enabled status"""
+        try:
+            self.browser_tracking_enabled = enabled
+            self.updated_at = datetime.utcnow().isoformat() + 'Z'
+            
+            properties = {
+                'browser_tracking_enabled': enabled,
+                'updated_at': self.updated_at
+            }
+            
+            success = weaviate_service.update_object('UserPreferences', self.id, properties)
+            if success:
+                logger.info(f"Updated tracking enabled to {enabled} for user {self.user_id}")
+            return success
+        except Exception as e:
+            logger.error(f"Error updating tracking enabled: {str(e)}")
+            return False
     
-    def update_tracking_settings(self, settings: Dict) -> bool:
+    def update_tracking_settings(self, settings: Dict[str, Any]) -> bool:
         """Update tracking settings"""
-        self.tracking_settings.update(settings)
-        self.updated_at = datetime.utcnow().isoformat()
-        return self.save()
+        try:
+            # Merge with existing settings
+            updated_settings = {**self.tracking_settings, **settings}
+            self.tracking_settings = updated_settings
+            self.updated_at = datetime.utcnow().isoformat() + 'Z'
+            
+            properties = {
+                'tracking_settings': json.dumps(updated_settings),
+                'updated_at': self.updated_at
+            }
+            
+            success = weaviate_service.update_object('UserPreferences', self.id, properties)
+            if success:
+                logger.info(f"Updated tracking settings for user {self.user_id}")
+            return success
+        except Exception as e:
+            logger.error(f"Error updating tracking settings: {str(e)}")
+            return False
     
     def save(self) -> bool:
         """Save preferences"""

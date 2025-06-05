@@ -101,8 +101,27 @@ const BrowserTrackingHistory = ({ open, onClose, browserTracker }) => {
 
   // API helper functions
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('token');
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
+    // Try different token sources to match the app's auth system
+    const tokenSources = [
+      () => localStorage.getItem('access_token'),
+      () => localStorage.getItem('authToken'),
+      () => localStorage.getItem('token'),
+      () => sessionStorage.getItem('access_token')
+    ];
+    
+    for (const getToken of tokenSources) {
+      try {
+        const token = getToken();
+        if (token) {
+          return { 'Authorization': `Bearer ${token}` };
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    
+    console.warn('🚫 No auth token found in localStorage for BrowserTrackingHistory');
+    return {};
   };
 
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';

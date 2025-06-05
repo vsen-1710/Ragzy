@@ -2160,3 +2160,190 @@ with app.app_context(). See the documentation for more information.
 This typically means that you attempted to use functionality that needed
 the current application. To solve this, set up an application context
 with app.app_context(). See the documentation for more information.
+2025-06-05 12:34:58,052 - app - INFO - Logger initialized
+2025-06-05 12:34:58,054 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:34:58,054 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:34:58,598 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7bf384026270>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:34:58,599 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:34:58,599 - app - INFO - Application initialized successfully
+2025-06-05 12:34:58,634 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.29.176:5000
+2025-06-05 12:34:58,635 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-06-05 12:34:58,637 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 12:34:59,785 - app - INFO - Logger initialized
+2025-06-05 12:34:59,788 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:34:59,788 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:35:00,578 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2dc30b0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:35:00,580 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:35:00,582 - app - INFO - Application initialized successfully
+2025-06-05 12:35:00,647 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 12:35:00,688 - werkzeug - INFO -  * Debugger PIN: 726-531-245
+2025-06-05 12:35:39,643 - app - INFO - Processing manual signup request
+2025-06-05 12:35:39,648 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:35:39] "[31m[1mPOST /auth/signup HTTP/1.1[0m" 400 -
+2025-06-05 12:36:08,894 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:36:08] "GET /api/browser-tracking/health HTTP/1.1" 200 -
+2025-06-05 12:36:26,486 - app - INFO - Processing manual login request
+2025-06-05 12:36:26,491 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b293a0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:36:26,494 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b29af0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:36:26,495 - app.services.weaviate_service - WARNING - Could not get schema properties for User: 'NoneType' object has no attribute 'schema'
+2025-06-05 12:36:26,496 - app.services.weaviate_service - WARNING - No properties found for class User
+2025-06-05 12:36:26,498 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:36:26] "[31m[1mPOST /auth/login HTTP/1.1[0m" 401 -
+2025-06-05 12:37:23,601 - app.services.weaviate_service - ERROR - Error in Query objects: WeaviateServiceOptimized.query_objects() got an unexpected keyword argument 'additional'
+2025-06-05 12:37:23,614 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b2a000>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:37:23,619 - app.services.weaviate_service - WARNING - No valid properties for UserPreferences
+2025-06-05 12:37:23,620 - app.services.weaviate_service - ERROR - Error in Query objects: WeaviateServiceOptimized.query_objects() got an unexpected keyword argument 'additional'
+2025-06-05 12:37:23,621 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:37:23] "GET /api/browser-tracking/status HTTP/1.1" 200 -
+2025-06-05 12:37:41,435 - app.services.weaviate_service - ERROR - Error in Query objects: WeaviateServiceOptimized.query_objects() got an unexpected keyword argument 'additional'
+2025-06-05 12:37:41,439 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b286e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:37:41,440 - app.services.weaviate_service - WARNING - No valid properties for UserPreferences
+2025-06-05 12:37:41,440 - app.services.weaviate_service - ERROR - Error in Query objects: WeaviateServiceOptimized.query_objects() got an unexpected keyword argument 'additional'
+2025-06-05 12:37:41,441 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:37:41] "GET /api/browser-tracking/status HTTP/1.1" 200 -
+2025-06-05 12:37:54,449 - app.services.weaviate_service - ERROR - Error in Query objects: WeaviateServiceOptimized.query_objects() got an unexpected keyword argument 'additional'
+2025-06-05 12:37:54,455 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b2bfb0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:37:54,457 - app.services.weaviate_service - WARNING - No valid properties for UserPreferences
+2025-06-05 12:37:54,459 - app.services.weaviate_service - ERROR - Error in Query objects: WeaviateServiceOptimized.query_objects() got an unexpected keyword argument 'additional'
+2025-06-05 12:37:54,460 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:37:54] "GET /api/browser-tracking/status HTTP/1.1" 200 -
+2025-06-05 12:38:07,535 - app.services.weaviate_service - ERROR - Error in Query objects: WeaviateServiceOptimized.query_objects() got an unexpected keyword argument 'additional'
+2025-06-05 12:38:07,539 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b29580>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:38:07,540 - app.services.weaviate_service - WARNING - No valid properties for UserPreferences
+2025-06-05 12:38:07,540 - app.services.weaviate_service - ERROR - Error in Query objects: WeaviateServiceOptimized.query_objects() got an unexpected keyword argument 'additional'
+2025-06-05 12:38:07,541 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:38:07] "GET /api/browser-tracking/status HTTP/1.1" 200 -
+2025-06-05 12:38:38,230 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b506b0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:38:38,277 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b50fb0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:38:38,280 - app.services.weaviate_service - ERROR - Error getting User 3ff8561d-b017-5c19-9d0c-d484e4c0ff5f: 'NoneType' object has no attribute 'data_object'
+2025-06-05 12:38:38,281 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:38:38] "[31m[1mGET /auth/verify HTTP/1.1[0m" 401 -
+2025-06-05 12:38:38,314 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b29550>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:38:38,350 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b2a480>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:38:38,354 - app.services.weaviate_service - ERROR - Error getting User 3ff8561d-b017-5c19-9d0c-d484e4c0ff5f: 'NoneType' object has no attribute 'data_object'
+2025-06-05 12:38:38,366 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:38:38] "[31m[1mGET /auth/verify HTTP/1.1[0m" 401 -
+2025-06-05 12:38:39,544 - app - INFO - Processing manual signup request
+2025-06-05 12:38:39,548 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b514f0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:38:39,548 - app.services.weaviate_service - WARNING - No properties found for class User
+2025-06-05 12:38:40,133 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b2ade0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:38:40,133 - app.services.weaviate_service - WARNING - No valid properties for User
+2025-06-05 12:38:40,134 - app - INFO - Successfully created user: None
+2025-06-05 12:38:40,135 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:38:40] "POST /auth/signup HTTP/1.1" 200 -
+2025-06-05 12:38:55,580 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:38:55] "[31m[1mGET /api/browser-tracking/status HTTP/1.1[0m" 422 -
+2025-06-05 12:39:03,025 - app - INFO - Processing manual login request
+2025-06-05 12:39:03,028 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b29c70>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:39:03,029 - app.services.weaviate_service - WARNING - No properties found for class User
+2025-06-05 12:39:03,030 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:39:03] "[31m[1mPOST /auth/login HTTP/1.1[0m" 401 -
+2025-06-05 12:39:03,060 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:39:03] "[31m[1mGET /api/browser-tracking/status HTTP/1.1[0m" 422 -
+2025-06-05 12:39:11,663 - app - INFO - Processing manual login request
+2025-06-05 12:39:11,668 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7880a2b52ed0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:39:11,669 - app.services.weaviate_service - WARNING - No properties found for class User
+2025-06-05 12:39:11,670 - werkzeug - INFO - 127.0.0.1 - - [05/Jun/2025 12:39:11] "[31m[1mPOST /auth/login HTTP/1.1[0m" 401 -
+2025-06-05 12:39:48,999 - werkzeug - INFO -  * Detected change in '/home/vishal-raj/personal_gpt/Ragzy/backend/app/services/browser_tracking_service.py', reloading
+2025-06-05 12:39:49,460 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 12:39:52,127 - app - INFO - Logger initialized
+2025-06-05 12:39:52,133 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:39:52,136 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:39:52,910 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7446966ee510>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:39:52,910 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:39:52,911 - app - INFO - Application initialized successfully
+2025-06-05 12:39:52,935 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 12:39:52,943 - werkzeug - INFO -  * Debugger PIN: 726-531-245
+2025-06-05 12:40:13,194 - werkzeug - INFO -  * Detected change in '/home/vishal-raj/personal_gpt/Ragzy/backend/app/services/browser_tracking_service.py', reloading
+2025-06-05 12:40:13,773 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 12:40:16,265 - app - INFO - Logger initialized
+2025-06-05 12:40:16,268 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:40:16,268 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:40:16,966 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ff636ff5b20>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:40:16,967 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:40:16,967 - app - INFO - Application initialized successfully
+2025-06-05 12:40:16,991 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 12:40:17,002 - werkzeug - INFO -  * Debugger PIN: 726-531-245
+2025-06-05 12:40:33,190 - werkzeug - INFO -  * Detected change in '/home/vishal-raj/personal_gpt/Ragzy/backend/app/services/browser_tracking_service.py', reloading
+2025-06-05 12:40:33,981 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 12:40:35,991 - app - INFO - Logger initialized
+2025-06-05 12:40:35,994 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:40:35,994 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:40:36,613 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7313118eb8c0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:40:36,613 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:40:36,614 - app - INFO - Application initialized successfully
+2025-06-05 12:40:36,644 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 12:40:36,653 - werkzeug - INFO -  * Debugger PIN: 726-531-245
+2025-06-05 12:40:48,292 - werkzeug - INFO -  * Detected change in '/home/vishal-raj/personal_gpt/Ragzy/backend/app/services/browser_tracking_service.py', reloading
+2025-06-05 12:40:48,658 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 12:40:50,804 - app - INFO - Logger initialized
+2025-06-05 12:40:50,807 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:40:50,807 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:40:51,407 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x730d8a7ebad0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:40:51,408 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:40:51,408 - app - INFO - Application initialized successfully
+2025-06-05 12:40:51,433 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 12:40:51,442 - werkzeug - INFO -  * Debugger PIN: 726-531-245
+2025-06-05 12:40:55,668 - werkzeug - INFO -  * Detected change in '/home/vishal-raj/personal_gpt/Ragzy/backend/app/services/browser_tracking_service.py', reloading
+2025-06-05 12:40:56,071 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 12:40:58,109 - app - INFO - Logger initialized
+2025-06-05 12:40:58,113 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:40:58,114 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:40:58,936 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7a0b7e4fba10>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:40:58,937 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:40:58,938 - app - INFO - Application initialized successfully
+2025-06-05 12:40:58,970 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 12:40:58,978 - werkzeug - INFO -  * Debugger PIN: 726-531-245
+2025-06-05 12:41:20,119 - werkzeug - INFO -  * Detected change in '/home/vishal-raj/personal_gpt/Ragzy/backend/app/routes/auth.py', reloading
+2025-06-05 12:41:20,569 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 12:41:22,462 - app - INFO - Logger initialized
+2025-06-05 12:41:22,467 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:41:22,468 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:41:23,282 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7a69b6bdf800>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:41:23,282 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:41:23,282 - app - INFO - Application initialized successfully
+2025-06-05 12:41:23,305 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 12:41:23,314 - werkzeug - INFO -  * Debugger PIN: 726-531-245
+2025-06-05 12:41:38,187 - werkzeug - INFO -  * Detected change in '/home/vishal-raj/personal_gpt/Ragzy/backend/app/routes/auth.py', reloading
+2025-06-05 12:41:38,556 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 12:41:40,553 - app - INFO - Logger initialized
+2025-06-05 12:41:40,556 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:41:40,557 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:41:41,149 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fb76900e720>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:41:41,151 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:41:41,152 - app - INFO - Application initialized successfully
+2025-06-05 12:41:41,187 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 12:41:41,197 - werkzeug - INFO -  * Debugger PIN: 726-531-245
+2025-06-05 12:41:56,833 - werkzeug - INFO -  * Detected change in '/home/vishal-raj/personal_gpt/Ragzy/backend/app/routes/auth.py', reloading
+2025-06-05 12:41:57,185 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 12:41:58,747 - app - INFO - Logger initialized
+2025-06-05 12:41:58,750 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 12:41:58,751 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 12:41:59,362 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x770a861e3cb0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 12:41:59,362 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 12:41:59,362 - app - INFO - Application initialized successfully
+2025-06-05 12:41:59,383 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 12:41:59,391 - werkzeug - INFO -  * Debugger PIN: 726-531-245
+2025-06-05 16:49:09,897 - app - INFO - Logger initialized
+2025-06-05 16:49:09,899 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 16:49:09,899 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 16:49:10,115 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ed68edfb950>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 16:49:10,115 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 16:49:10,116 - app - INFO - Application initialized successfully
+2025-06-05 16:49:11,554 - app - INFO - LIGHTNING RESPONSE: 16 chars
+2025-06-05 16:51:14,738 - app - INFO - Logger initialized
+2025-06-05 16:51:14,739 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 16:51:14,740 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 16:51:15,178 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fe7c90f7cb0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 16:51:15,179 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 16:51:15,179 - app - INFO - Application initialized successfully
+2025-06-05 16:52:37,730 - app - INFO - Logger initialized
+2025-06-05 16:52:37,732 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 16:52:37,732 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 16:52:38,139 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x70ccff6e79b0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 16:52:38,139 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 16:52:38,140 - app - INFO - Application initialized successfully
+2025-06-05 16:52:38,158 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.29.176:5000
+2025-06-05 16:52:38,159 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-06-05 16:52:38,160 - werkzeug - INFO -  * Restarting with stat
+2025-06-05 16:52:39,156 - app - INFO - Logger initialized
+2025-06-05 16:52:39,158 - app - WARNING - Failed to initialize Redis client: Error -3 connecting to redis:6379. Temporary failure in name resolution.
+2025-06-05 16:52:39,163 - app - INFO - Weaviate client will be initialized on first use
+2025-06-05 16:52:39,566 - app - WARNING - Failed to initialize Weaviate client: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /v1/.well-known/openid-configuration (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x703e3a8fbd40>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-06-05 16:52:39,566 - app - INFO - Weaviate schemas initialized successfully
+2025-06-05 16:52:39,566 - app - INFO - Application initialized successfully
+2025-06-05 16:52:39,587 - werkzeug - WARNING -  * Debugger is active!
+2025-06-05 16:52:39,592 - werkzeug - INFO -  * Debugger PIN: 726-531-245

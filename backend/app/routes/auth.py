@@ -10,6 +10,11 @@ import traceback
 import re
 from datetime import timedelta
 from ..models.user import UserModel
+from werkzeug.security import check_password_hash, generate_password_hash
+from app.utils.logger import get_logger
+
+# Get logger instance
+logger = get_logger()
 
 # Change the URL prefix to match the frontend request
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -34,6 +39,9 @@ COOKIE_MAX_AGE = 7 * 24 * 60 * 60  # 7 days in seconds
 
 # Google OAuth namespace for UUID generation
 GOOGLE_UUID_NAMESPACE = uuid.UUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')
+
+# In-memory fallback storage for users when Weaviate is not available
+fallback_users = {}
 
 def get_cors_origin():
     """Get appropriate CORS origin based on request"""
@@ -80,10 +88,8 @@ def validate_email(email):
 def validate_password(password):
     """Validate password strength"""
     if len(password) < 6:
-        return False, "Password must be at least 6 characters long"
-    if len(password) > 128:
-        return False, "Password must be less than 128 characters"
-    return True, ""
+        return False
+    return True
 
 def google_id_to_uuid(google_id: str) -> str:
     """Convert Google user ID to a deterministic UUID"""
@@ -214,41 +220,51 @@ def create_success_response(access_token, user, picture=None):
     
     return add_cors_headers(response)
 
+def _check_weaviate_available():
+    """Check if Weaviate is available"""
+    try:
+        from app.services.weaviate_service import weaviate_service
+        test_result = weaviate_service.query_objects('User', limit=1)
+        return True
+    except Exception as e:
+        logger.warning(f"Weaviate not available, using fallback auth: {str(e)}")
+        return False
+
 @auth_bp.route('/signup', methods=['POST', 'OPTIONS'])
-def manual_signup():
-    """Manual signup with email and password"""
+def signup():
+    """Enhanced signup with manual authentication support"""
     if request.method == 'OPTIONS':
         response = make_response()
         return add_cors_headers(response)
         
     try:
-        current_app.logger.info("Processing manual signup request")
         data = request.get_json()
         
         if not data:
-            return create_error_response('Request data is required', 400)
+            return jsonify({'error': 'Request data required', 'success': False}), 400
         
         email = data.get('email', '').strip().lower()
-        password = data.get('password', '')
+        password = data.get('password', '').strip()
         name = data.get('name', '').strip()
         
-        # Validate required fields
+        # Validate input
         if not email or not password or not name:
-            return create_error_response('Email, password, and name are required', 400)
+            return jsonify({'error': 'Email, password, and name are required', 'success': False}), 400
         
-        # Validate email format
         if not validate_email(email):
-            return create_error_response('Invalid email format', 400)
+            return jsonify({'error': 'Invalid email format', 'success': False}), 400
         
-        # Validate password
-        is_valid_password, password_error = validate_password(password)
-        if not is_valid_password:
-            return create_error_response(password_error, 400)
+        if not validate_password(password):
+            return jsonify({'error': 'Password must be at least 6 characters long', 'success': False}), 400
+        
+        # Check Weaviate availability
+        if not _check_weaviate_available():
+            return _signup_fallback(email, password, name)
         
         # Check if user already exists
         existing_user = UserModel.get_by_email(email)
         if existing_user:
-            return create_error_response('User with this email already exists', 409)
+            return jsonify({'error': 'User with this email already exists', 'success': False}), 409
         
         # Create new user
         user = UserModel.create(
@@ -258,71 +274,202 @@ def manual_signup():
         )
         
         if not user:
-            return create_error_response('Failed to create user account', 500)
+            return jsonify({'error': 'Failed to create user', 'success': False}), 500
         
-        # Generate JWT token
+        # Create access token
+        additional_claims = {
+            'email': user.email,
+            'name': user.username,
+            'auth_provider': user.auth_provider,
+            'email_verified': user.email_verified
+        }
+        
         access_token = create_jwt_token(user)
         
-        current_app.logger.info(f"Successfully created user: {user.id}")
-        return create_success_response(access_token, user)
+        return jsonify({
+            'success': True,
+            'access_token': access_token,
+            'user': {
+                'id': user.id,
+                'name': user.username,
+                'email': user.email,
+                'auth_provider': user.auth_provider,
+                'email_verified': user.email_verified
+            }
+        })
         
     except Exception as e:
-        current_app.logger.error(f"Manual signup error: {str(e)}")
-        current_app.logger.error(traceback.format_exc())
-        return create_error_response('Signup failed. Please try again.', 500)
+        logger.error(f"Signup error: {str(e)}")
+        return jsonify({'error': 'Internal server error', 'success': False}), 500
+
+def _signup_fallback(email, password, name):
+    """Fallback signup using in-memory storage"""
+    try:
+        # Check if user exists
+        if email in fallback_users:
+            return jsonify({'error': 'User with this email already exists', 'success': False}), 409
+        
+        # Create user in memory
+        user_id = f"fallback_user_{len(fallback_users) + 1}"
+        password_hash = generate_password_hash(password)
+        
+        fallback_users[email] = {
+            'id': user_id,
+            'username': name,
+            'email': email,
+            'password_hash': password_hash,
+            'auth_provider': 'manual',
+            'email_verified': False
+        }
+        
+        # Create access token
+        additional_claims = {
+            'email': email,
+            'name': name,
+            'auth_provider': 'manual',
+            'email_verified': False
+        }
+        
+        access_token = create_access_token(
+            identity=user_id,
+            additional_claims=additional_claims
+        )
+        
+        logger.info(f"Created fallback user: {email}")
+        
+        return jsonify({
+            'success': True,
+            'access_token': access_token,
+            'user': {
+                'id': user_id,
+                'name': name,
+                'email': email,
+                'auth_provider': 'manual',
+                'email_verified': False
+            },
+            'using_fallback': True
+        })
+        
+    except Exception as e:
+        logger.error(f"Fallback signup error: {str(e)}")
+        return jsonify({'error': 'Failed to create user', 'success': False}), 500
+
+def _login_fallback(email, password):
+    """Fallback login using in-memory storage"""
+    try:
+        # Check if user exists in fallback storage
+        if email not in fallback_users:
+            return jsonify({'error': 'Invalid email or password', 'success': False}), 401
+        
+        user_data = fallback_users[email]
+        
+        # Check password
+        if not check_password_hash(user_data['password_hash'], password):
+            return jsonify({'error': 'Invalid email or password', 'success': False}), 401
+        
+        # Create access token
+        additional_claims = {
+            'email': user_data['email'],
+            'name': user_data['username'],
+            'auth_provider': user_data['auth_provider'],
+            'email_verified': user_data['email_verified']
+        }
+        
+        access_token = create_access_token(
+            identity=user_data['id'],
+            additional_claims=additional_claims
+        )
+        
+        logger.info(f"Fallback login successful for user: {email}")
+        
+        return jsonify({
+            'success': True,
+            'access_token': access_token,
+            'user': {
+                'id': user_data['id'],
+                'name': user_data['username'],
+                'email': user_data['email'],
+                'auth_provider': user_data['auth_provider'],
+                'email_verified': user_data['email_verified']
+            },
+            'using_fallback': True
+        })
+        
+    except Exception as e:
+        logger.error(f"Fallback login error: {str(e)}")
+        return jsonify({'error': 'Login failed. Please try again.', 'success': False}), 500
 
 @auth_bp.route('/login', methods=['POST', 'OPTIONS'])
-def manual_login():
-    """Manual login with email and password"""
+def login():
+    """Enhanced login with manual authentication support"""
     if request.method == 'OPTIONS':
         response = make_response()
         return add_cors_headers(response)
         
     try:
-        current_app.logger.info("Processing manual login request")
         data = request.get_json()
         
         if not data:
-            return create_error_response('Request data is required', 400)
+            return jsonify({'error': 'Request data required', 'success': False}), 400
         
         email = data.get('email', '').strip().lower()
-        password = data.get('password', '')
+        password = data.get('password', '').strip()
         
-        # Validate required fields
         if not email or not password:
-            return create_error_response('Email and password are required', 400)
+            return jsonify({'error': 'Email and password are required', 'success': False}), 400
         
-        # Validate email format
-        if not validate_email(email):
-            return create_error_response('Invalid email format', 400)
+        logger.info(f"Login attempt for email: {email}")
         
-        # Find user by email
+        # Check Weaviate availability
+        weaviate_available = _check_weaviate_available()
+        logger.info(f"Weaviate available: {weaviate_available}")
+        
+        if not weaviate_available:
+            logger.info("Using fallback login")
+            return _login_fallback(email, password)
+        
+        # Get user by email
+        logger.info(f"Looking up user by email: {email}")
         user = UserModel.get_by_email(email)
+        
         if not user:
-            return create_error_response('Invalid email or password', 401)
+            logger.warning(f"User not found for email: {email}")
+            return jsonify({'error': 'Invalid email or password', 'success': False}), 401
         
-        # Check if user uses manual authentication
-        if user.auth_provider != 'manual':
-            if user.auth_provider == 'google':
-                return create_error_response('This account uses Google Sign-In. Please use the "Continue with Google" option.', 400)
-            else:
-                return create_error_response('This account uses a different authentication method', 400)
+        logger.info(f"User found: ID={user.id}, auth_provider={user.auth_provider}, has_password_hash={bool(user.password_hash)}")
         
-        # Verify password
-        if not user.check_password(password):
-            return create_error_response('Invalid email or password', 401)
+        # Check password
+        password_valid = user.check_password(password)
+        logger.info(f"Password check result: {password_valid}")
+        
+        if not password_valid:
+            logger.warning(f"Password check failed for user: {email}")
+            return jsonify({'error': 'Invalid email or password', 'success': False}), 401
         
         # Check if user is active
         if not user.is_active:
-            return create_error_response('Account is disabled. Please contact support.', 403)
+            logger.warning(f"Inactive user attempted login: {email}")
+            return jsonify({'error': 'Account is deactivated', 'success': False}), 401
         
-        # Generate JWT token
-        access_token = create_jwt_token(user)
+        # Create access token
+        additional_claims = {
+            'email': user.email,
+            'name': user.username,
+            'auth_provider': user.auth_provider,
+            'email_verified': user.email_verified
+        }
+        
+        access_token = create_access_token(
+            identity=str(user.id),
+            additional_claims=additional_claims
+        )
         
         current_app.logger.info(f"Successfully logged in user: {user.id}")
+        logger.info(f"Login successful for user: {email}")
         return create_success_response(access_token, user)
         
     except Exception as e:
+        logger.error(f"Login error: {str(e)}")
         current_app.logger.error(f"Manual login error: {str(e)}")
         current_app.logger.error(traceback.format_exc())
         return create_error_response('Login failed. Please try again.', 500)

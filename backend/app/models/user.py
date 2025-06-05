@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 import bcrypt
 from app.services.weaviate_service import weaviate_service
+from app.utils.logger import get_logger
 
 class UserModel:
     def __init__(self, user_id: str = None, username: str = None, email: str = None, 
@@ -33,6 +34,8 @@ class UserModel:
     @classmethod
     def create(cls, username: str, email: str, password: str = None, google_id: str = None) -> 'UserModel':
         """Create a new user"""
+        logger = get_logger()
+        
         properties = {
             'username': username,
             'email': email,
@@ -46,11 +49,17 @@ class UserModel:
             salt = bcrypt.gensalt()
             password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
             properties['password_hash'] = password_hash
+            logger.info(f"Created password hash for user {email}: length={len(password_hash)}, starts_with=${password_hash[:10]}")
+        else:
+            logger.info(f"No password hash created for user {email}: password={bool(password)}, google_id={bool(google_id)}")
         
         if google_id:
             properties['google_id'] = google_id
             
+        logger.info(f"Properties being stored: {list(properties.keys())}")
         user_id = weaviate_service.create_object('User', properties)
+        logger.info(f"User created with ID: {user_id}")
+        
         return cls(
             user_id=user_id, 
             username=username, 
@@ -142,6 +151,8 @@ class UserModel:
     @classmethod
     def get_by_email(cls, email: str) -> Optional['UserModel']:
         """Get user by email"""
+        logger = get_logger()
+        
         where_filter = {
             "path": ["email"],
             "operator": "Equal",
@@ -150,6 +161,11 @@ class UserModel:
         users = weaviate_service.query_objects('User', where_filter=where_filter, limit=1)
         if users:
             user_data = users[0]
+            logger.info(f"Retrieved user data for {email}: keys={list(user_data.keys())}")
+            logger.info(f"Password hash retrieved: {bool(user_data.get('password_hash'))}")
+            if user_data.get('password_hash'):
+                logger.info(f"Password hash length: {len(user_data.get('password_hash'))}")
+            
             return cls(
                 user_id=user_data.get('_additional', {}).get('id'),
                 username=user_data.get('username'),

@@ -56,6 +56,8 @@ import MessageBubble from '../components/MessageBubble';
 import BrowserTrackingToggle from '../components/BrowserTrackingToggle';
 import BrowserTrackingHistory from '../components/BrowserTrackingHistory';
 import './ChatPage.css';
+import { ChatMemoryManager } from '../utils/chatMemoryManager';
+import { ChatGPTIntegration } from '../utils/chatGPTIntegration';
 
 const API_URL = API_CONFIG.BASE_URL;
 
@@ -126,6 +128,9 @@ function ChatPage() {
   const [showSubChatDialog, setShowSubChatDialog] = useState(false);
   const [selectedMessageForThread, setSelectedMessageForThread] = useState(null);
   const [threadTitle, setThreadTitle] = useState('');
+
+  // Initialize ChatGPT integration
+  const chatGPTIntegration = useRef(null);
 
   // Initialize storage and tracking
   useEffect(() => {
@@ -497,30 +502,59 @@ function ChatPage() {
 
   function getBrowserContextualMessage(userMessage) {
     // Only add browser context if tracking is enabled
-    if (!isBrowserTrackingEnabled || !browserTracker.current) {
+    if (!isBrowserTrackingEnabled || !browserTracker.current || !chatGPTIntegration.current) {
       return userMessage;
     }
 
     try {
-      const activitySummary = browserTracker.current.getActivitySummary(15);
+      // Use the ChatGPT integration to generate intelligent context
+      const { contextPrompt } = ChatMemoryManager.processMessage(userMessage);
       
-      // Don't add context if tracking is disabled or no activity detected
-      if (activitySummary === "Browser tracking is disabled." || 
-          activitySummary === "No recent browser activity detected.") {
-        return userMessage;
+      // Get search context specifically
+      const searchContext = BrowserActivityTracker.getSearchContext(60); // Last hour
+      const lastSearch = BrowserActivityTracker.getLastSearch();
+      
+      // Check if this is a contextual question
+      const contextualKeywords = ['best', 'better', 'which', 'what', 'recommend', 'compare', 'vs', 'difference', 'choose', 'pick'];
+      const isContextual = contextualKeywords.some(keyword => 
+        userMessage.toLowerCase().includes(keyword)
+      );
+      
+      // Enhanced message with search context
+      let enhancedMessage = `[USER MESSAGE]: ${userMessage}\n\n`;
+      
+      if (searchContext?.lastQuery) {
+        enhancedMessage += `🔍 [SEARCH CONTEXT]: User recently searched for "${searchContext.lastQuery}" on ${searchContext.lastDomain} (${searchContext.timeAgo})\n`;
+        
+        if (isContextual) {
+          enhancedMessage += `💡 [CONTEXT HINT]: User is likely asking about "${searchContext.lastQuery}" - provide specific advice for this search topic\n`;
+        }
+        
+        enhancedMessage += `📊 [RECENT SEARCHES]: ${searchContext.allQueries.slice(0, 3).join(', ')}\n\n`;
       }
       
-      // Add comprehensive browser context for smarter responses
-      const contextualMessage = `[USER MESSAGE]: ${userMessage}
-
-[BROWSER CONTEXT FOR AI]: 
-${activitySummary}
-
-[TRACKING STATUS]: Browser tracking enabled - Use this context to provide more relevant and personalized responses based on the user's current browsing activity and interests.`;
+      // Add browser activity summary (condensed)
+      const activitySummary = browserTracker.current.getActivitySummary(15);
+      if (activitySummary && !activitySummary.includes("No recent browser activity")) {
+        // Extract just the search and context lines
+        const lines = activitySummary.split('\n');
+        const relevantLines = lines.filter(line => 
+          line.includes('SEARCH') || 
+          line.includes('most recent search') ||
+          line.includes('which is best') ||
+          line.includes('FOR AI ASSISTANT')
+        ).slice(0, 5);
+        
+        if (relevantLines.length > 0) {
+          enhancedMessage += `🧠 [AI CONTEXT]:\n${relevantLines.join('\n')}\n\n`;
+        }
+      }
       
-      return contextualMessage;
+      enhancedMessage += `[INSTRUCTIONS]: Behave like ChatGPT - friendly, helpful, and context-aware. If user asks contextual questions like "which is best?", refer to their recent search context above.`;
+      
+      return enhancedMessage;
     } catch (error) {
-      console.error('Error getting browser context:', error);
+      console.error('Error getting enhanced context:', error);
       return userMessage;
     }
   }
@@ -686,6 +720,71 @@ ${activitySummary}
   function handleTestCommands(userMessage) {
     const lowerMessage = userMessage.toLowerCase().trim();
     
+    // Test search context functionality
+    if (lowerMessage.startsWith('/test search ')) {
+      const query = userMessage.slice(13).trim(); // Remove '/test search '
+      if (query && browserTracker.current) {
+        // Simulate the search
+        browserTracker.current.simulateSearchQuery(query);
+        return `🔍 **Simulated search for: "${query}"**\n\n` +
+               `I've simulated that you searched for "${query}" on Google. ` +
+               `Now try asking a contextual question like:\n` +
+               `• "which is the best?"\n` +
+               `• "what do you recommend?"\n` +
+               `• "compare the options"\n\n` +
+               `The AI should now understand you're referring to "${query}" based on your recent search context!`;
+      } else {
+        return "❌ Browser tracking is disabled or search query is empty. Enable tracking first.";
+      }
+    }
+    
+    // Quick test with predefined search
+    if (lowerMessage === '/test context' || lowerMessage === '/demo') {
+      if (browserTracker.current) {
+        // Simulate a search for gaming laptops
+        browserTracker.current.simulateSearchQuery('best gaming laptops 2024');
+        return `🎮 **Demo: Search Context Test**\n\n` +
+               `I've simulated that you just searched for "best gaming laptops 2024" on Google.\n\n` +
+               `**Now ask me:** "which one is the best?" or "what do you recommend?"\n\n` +
+               `The AI should understand you're asking about gaming laptops based on your search context! 🚀`;
+      } else {
+        return "❌ Browser tracking is disabled. Enable tracking to test search context.";
+      }
+    }
+    
+    // Show current search context
+    if (lowerMessage === '/search status' || lowerMessage === '/context') {
+      if (!browserTracker.current) {
+        return "❌ Browser tracking is disabled.";
+      }
+      
+      const searchContext = BrowserActivityTracker.getSearchContext(60);
+      const recentSearches = BrowserActivityTracker.getRecentSearches(5);
+      
+      if (!searchContext) {
+        return "📭 **No recent search context found.**\n\n" +
+               "Try:\n" +
+               "• `/test search [your query]` to simulate a search\n" +
+               "• `/demo` for a quick gaming laptop demo\n" +
+               "• Search on Google in another tab, then come back here";
+      }
+      
+      let status = `🔍 **Current Search Context:**\n\n`;
+      status += `**Last Search:** "${searchContext.lastQuery}"\n`;
+      status += `**Domain:** ${searchContext.lastDomain}\n`;
+      status += `**Time:** ${searchContext.timeAgo}\n\n`;
+      
+      if (recentSearches.length > 1) {
+        status += `**Recent Searches:**\n`;
+        recentSearches.slice(0, 3).forEach((search, idx) => {
+          status += `${idx + 1}. "${search.query}" (${search.domain})\n`;
+        });
+      }
+      
+      status += `\n💡 **Try asking:** "which is best?" or "what do you recommend?"`;
+      return status;
+    }
+    
     // Quick tracking history command
     if (lowerMessage === '/history' || lowerMessage === '/track history') {
       if (!isBrowserTrackingEnabled || !browserTracker.current) {
@@ -748,7 +847,8 @@ ${activitySummary}
              "• `/disable tracking` - Disable tracking\n" +
              "• `/tracking stats` - Show detailed statistics\n" +
              "• `/browser` - Browser activity test report\n" +
-             "• `/clear activity` - Clear activity history\n\n" +
+             "• `/clear activity` - Clear activity history\n" +
+             "• `/test persistence` - Test if settings persist across refreshes\n\n" +
              "**⌨️ Keyboard Shortcuts:**\n" +
              "• **Ctrl+H** (Cmd+H on Mac) - Open history dashboard\n" +
              "• **Ctrl+T** (Cmd+T on Mac) - Toggle tracking on/off\n\n" +
@@ -759,6 +859,46 @@ ${activitySummary}
              "• Activity analytics and insights\n" +
              "• Real-time activity monitoring\n" +
              "• Engagement scoring for better recommendations";
+    }
+    
+    // Test persistence across page refreshes
+    if (lowerMessage === '/test persistence' || lowerMessage === '/persistence test') {
+      if (!browserTracker.current) {
+        return "❌ **Browser tracker not available**";
+      }
+      
+      const currentState = browserTracker.current.isTrackingEnabled();
+      const settingsKey = `browserTracker_${user?.id}_settings`;
+      const storedSettings = localStorage.getItem(settingsKey);
+      
+      let response = "🧪 **Tracking Persistence Test:**\n\n";
+      response += `**Current State:** ${currentState ? '✅ Enabled' : '❌ Disabled'}\n`;
+      response += `**Settings Key:** \`${settingsKey}\`\n`;
+      
+      if (storedSettings) {
+        try {
+          const parsed = JSON.parse(storedSettings);
+          response += `**Stored Settings:** ${JSON.stringify(parsed, null, 2)}\n`;
+          response += `**Settings Match:** ${parsed.isEnabled === currentState ? '✅ Yes' : '❌ No'}\n\n`;
+        } catch (e) {
+          response += `**Stored Settings:** ❌ Invalid JSON\n\n`;
+        }
+      } else {
+        response += `**Stored Settings:** ❌ None found\n\n`;
+      }
+      
+      response += "**🔬 Test Instructions:**\n";
+      response += "1. Toggle tracking on/off using the switch above\n";
+      response += "2. Refresh the page (F5 or Ctrl+R)\n";
+      response += "3. Run `/test persistence` again\n";
+      response += "4. Check if the state persisted correctly\n\n";
+      
+      response += "**💡 Expected Behavior:**\n";
+      response += "• Settings should persist across page refreshes\n";
+      response += "• Your choice should be respected (not auto-enabled)\n";
+      response += "• Backend should sync to match your preference\n";
+      
+      return response;
     }
     
     if (lowerMessage === '/test browser activity' || lowerMessage === '/browser') {
@@ -1313,33 +1453,44 @@ ${activitySummary}
       if (!user?.id || !browserTracker.current) return;
       
       try {
-        // Try to get tracking status from backend
-        const response = await fetch(`${API_URL}/api/browser-tracking/status`, {
-          headers: getAuthHeaders()
-        });
+        // Get the user's stored preference (this is the source of truth)
+        const localTrackingState = browserTracker.current.isTrackingEnabled();
+        console.log(`🔧 User's stored tracking preference: ${localTrackingState}`);
         
-        if (response.ok) {
-          const data = await response.json();
-          const backendEnabled = data.preferences?.browser_tracking_enabled || false;
+        // Always respect the user's local preference - never override it
+        setIsBrowserTrackingEnabled(localTrackingState);
+        
+        // Only start tracking if user has explicitly enabled it AND it's not already tracking
+        if (localTrackingState && !browserTracker.current.isTracking) {
+          console.log(`🚀 Starting tracking as per user's saved preference`);
+          browserTracker.current.startTracking();
+          browserTracker.current.startPeriodicSync();
           
-          // Use backend state if available, otherwise keep local state
-          if (backendEnabled !== isBrowserTrackingEnabled) {
-            console.log(`Syncing with backend: ${backendEnabled}`);
-            setIsBrowserTrackingEnabled(backendEnabled);
-            
-            if (backendEnabled) {
-              browserTracker.current.enableTracking();
-              // Sync pending activities
-              setTimeout(syncActivitiesWithBackend, 1000);
-            } else {
-              browserTracker.current.disableTracking();
-            }
-          }
-        } else {
-          console.log('Backend unavailable, using local tracker state');
+          // Sync activities after starting
+          setTimeout(syncActivitiesWithBackend, 1000);
+        } else if (!localTrackingState) {
+          console.log(`⏸️ Tracking disabled as per user's preference`);
+          // Ensure tracking is stopped
+          browserTracker.current.stopTracking();
         }
+        
+        // Optional: Sync preference with backend (but don't let backend override user choice)
+        try {
+          const endpoint = localTrackingState ? '/enable' : '/disable';
+          await fetch(`${API_URL}/api/browser-tracking${endpoint}`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+          });
+          console.log(`📡 Synced user preference with backend: ${localTrackingState}`);
+        } catch (backendError) {
+          console.log('📡 Backend sync failed, continuing with local preference');
+        }
+        
       } catch (error) {
-        console.log('Failed to sync with backend, using local state:', error.message);
+        console.error('🚨 Error in tracking initialization:', error);
+        // On any error, default to disabled for privacy
+        setIsBrowserTrackingEnabled(false);
+        browserTracker.current?.stopTracking();
       }
     };
     
@@ -1347,7 +1498,7 @@ ${activitySummary}
     if (user?.id && browserTracker.current) {
       initializeBrowserTracking();
     }
-  }, [user?.id, getAuthHeaders, isBrowserTrackingEnabled, syncActivitiesWithBackend]);
+  }, [user?.id, getAuthHeaders, syncActivitiesWithBackend]);
 
   // Auto-sync activities periodically when tracking is enabled
   useEffect(() => {
@@ -1459,6 +1610,97 @@ ${activitySummary}
     setSelectedMessageForThread(null);
     setThreadTitle('');
   };
+
+  // Initialize ChatGPT integration
+  useEffect(() => {
+    if (user && !chatGPTIntegration.current) {
+      // Initialize ChatGPT integration with search context tracking
+      chatGPTIntegration.current = ChatGPTIntegration.initialize(user.id);
+      console.log('🤖 ChatGPT integration initialized for intelligent context-aware responses');
+    }
+  }, [user]);
+
+  // Enhanced Browser Extension Integration - Cross-tab tracking
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Create extension connector for communication with browser extension
+    window.ragbotExtensionConnector = {
+      requestConnection: async () => {
+        try {
+          const authToken = localStorage.getItem('authToken');
+          if (!authToken) {
+            console.warn('No auth token available for extension connection');
+            return;
+          }
+          
+          // Send credentials to extension
+          const response = await window.chrome.runtime.sendMessage({
+            action: 'setAuth',
+            token: authToken,
+            userId: user.id
+          });
+          
+          if (response?.success) {
+            // Show success notification
+            setSuccess('🤖 Browser Extension Connected! Cross-site tracking is now active.');
+            
+            // Update tracking state if extension is connected
+            setTimeout(() => {
+              if (browserTracker.current) {
+                browserTracker.current.setExtensionConnected(true);
+              }
+            }, 1000);
+          } else {
+            console.error('Extension connection failed:', response);
+            setSuccess('❌ Failed to connect browser extension. Please try again.');
+          }
+          
+        } catch (error) {
+          console.error('Extension connection error:', error);
+          // Extension might not be installed
+          setSuccess('💡 Install the RagBot Browser Extension for enhanced cross-site tracking!');
+        }
+      },
+      
+      isExtensionAvailable: async () => {
+        try {
+          if (!window.chrome?.runtime) return false;
+          await window.chrome.runtime.sendMessage({ action: 'getStatus' });
+          return true;
+        } catch {
+          return false;
+        }
+      }
+    };
+    
+    // Check if extension is available on load
+    const checkExtension = async () => {
+      try {
+        const hasExtension = await window.ragbotExtensionConnector.isExtensionAvailable();
+        if (hasExtension && user?.id) {
+          console.log('🤖 RagBot Extension detected! Auto-connecting...');
+          // Auto-connect if user is logged in
+          setTimeout(() => {
+            window.ragbotExtensionConnector.requestConnection();
+          }, 2000);
+        }
+      } catch (error) {
+        console.log('No browser extension detected');
+      }
+    };
+    
+    if (user?.id) {
+      checkExtension();
+    }
+    
+    return () => {
+      // Cleanup
+      if (window.ragbotExtensionConnector) {
+        delete window.ragbotExtensionConnector;
+      }
+    };
+  }, [user?.id]);
 
   return (
     <Box className="chat-page-container">

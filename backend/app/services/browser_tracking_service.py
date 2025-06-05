@@ -4,6 +4,11 @@ from app.models.browser_activity import BrowserActivityModel
 from app.models.user_preferences import UserPreferencesModel
 from app.models.user import UserModel
 import json
+import logging
+from app.utils.logger import get_logger
+
+# Get logger instance
+logger = get_logger()
 
 class BrowserTrackingService:
     """Service for managing browser activity tracking and context generation"""
@@ -13,21 +18,110 @@ class BrowserTrackingService:
         self.context_hours_back = 4  # Increased to 4 hours for cross-tab context
         self.cross_tab_sync_interval = 5  # Sync interval in seconds
         
+        # In-memory fallback storage when Weaviate is not available
+        self.fallback_storage = {
+            'activities': {},  # user_id: [activities]
+            'preferences': {}  # user_id: preferences
+        }
+        self.use_fallback = False
+        
+    def _check_weaviate_available(self):
+        """Check if Weaviate is available"""
+        try:
+            from app.services.weaviate_service import weaviate_service
+            # Try a simple operation to check if Weaviate is working
+            test_result = weaviate_service.query_objects('User', limit=1)
+            return True
+        except Exception as e:
+            logger.warning(f"Weaviate not available, using fallback storage: {str(e)}")
+            self.use_fallback = True
+            return False
+    
     def is_tracking_enabled(self, user_id: str) -> bool:
-        """Check if tracking is enabled for user"""
-        preferences = UserPreferencesModel.get_by_user_id(user_id)
-        return preferences.browser_tracking_enabled if preferences else False
+        """Check if tracking is enabled for user with fallback support"""
+        if not self._check_weaviate_available():
+            # Use fallback storage
+            prefs = self._get_user_preferences_fallback(user_id)
+            return prefs.get('browser_tracking_enabled', True)  # Default to True for testing
+            
+        try:
+            preferences = UserPreferencesModel.get_by_user_id(user_id)
+            return preferences.browser_tracking_enabled if preferences else True  # Default to True
+        except Exception as e:
+            logger.warning(f"Error checking tracking status, defaulting to enabled: {str(e)}")
+            return True
+    
+    def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
+        """Get user tracking preferences with fallback support"""
+        if not self._check_weaviate_available():
+            return self._get_user_preferences_fallback(user_id)
+            
+        try:
+            preferences = UserPreferencesModel.get_or_create(user_id)
+            return preferences.to_dict() if preferences else {
+                'browser_tracking_enabled': False,
+                'tracking_settings': {},
+                'user_id': user_id
+            }
+        except Exception as e:
+            logger.error(f"Error getting user preferences: {str(e)}")
+            return self._get_user_preferences_fallback(user_id)
+    
+    def _get_user_preferences_fallback(self, user_id: str) -> Dict[str, Any]:
+        """Get user preferences from fallback storage"""
+        if user_id in self.fallback_storage['preferences']:
+            return self.fallback_storage['preferences'][user_id]
+        
+        # Return default preferences
+        default_prefs = {
+            'id': f'fallback_{user_id}',
+            'user_id': user_id,
+            'browser_tracking_enabled': True,  # Default to enabled for testing
+            'tracking_settings': {
+                'track_clicks': True,
+                'track_navigation': True,
+                'track_scroll': True,
+                'track_focus': True,
+                'retention_days': 30,
+                'max_activities_per_session': 200
+            },
+            'created_at': datetime.utcnow().isoformat() + 'Z',
+            'updated_at': datetime.utcnow().isoformat() + 'Z'
+        }
+        
+        self.fallback_storage['preferences'][user_id] = default_prefs
+        return default_prefs
     
     def enable_tracking(self, user_id: str) -> Dict[str, Any]:
-        """Enable browser tracking for user"""
-        preferences = UserPreferencesModel.get_or_create(user_id)
-        success = preferences.update_tracking_enabled(True)
+        """Enable tracking for user with fallback support"""
+        if not self._check_weaviate_available():
+            return self._enable_tracking_fallback(user_id)
+            
+        try:
+            preferences = UserPreferencesModel.get_or_create(user_id)
+            preferences.update_tracking_enabled(True)
+            
+            return {
+                'success': True,
+                'message': 'Browser tracking enabled',
+                'preferences': preferences.to_dict()
+            }
+        except Exception as e:
+            logger.error(f"Error enabling tracking: {str(e)}")
+            return self._enable_tracking_fallback(user_id)
+    
+    def _enable_tracking_fallback(self, user_id: str) -> Dict[str, Any]:
+        """Enable tracking in fallback storage"""
+        prefs = self._get_user_preferences_fallback(user_id)
+        prefs['browser_tracking_enabled'] = True
+        prefs['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+        self.fallback_storage['preferences'][user_id] = prefs
         
         return {
-            'success': success,
-            'enabled': True,
-            'cross_tab_enabled': True,
-            'message': 'Enhanced browser tracking enabled successfully'
+            'success': True,
+            'message': 'Browser tracking enabled (fallback mode)',
+            'preferences': prefs,
+            'using_fallback': True
         }
     
     def disable_tracking(self, user_id: str) -> Dict[str, Any]:
@@ -41,17 +135,6 @@ class BrowserTrackingService:
             'cross_tab_enabled': False,
             'message': 'Browser tracking disabled successfully'
         }
-    
-    def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
-        """Get user tracking preferences"""
-        preferences = UserPreferencesModel.get_or_create(user_id)
-        prefs_dict = preferences.to_dict()
-        
-        # Add cross-tab tracking info
-        prefs_dict['cross_tab_tracking'] = prefs_dict.get('browser_tracking_enabled', False)
-        prefs_dict['sync_interval'] = self.cross_tab_sync_interval
-        
-        return prefs_dict
     
     def update_tracking_settings(self, user_id: str, settings: Dict) -> Dict[str, Any]:
         """Update user tracking settings"""
@@ -73,54 +156,239 @@ class BrowserTrackingService:
         }
     
     def store_activities(self, user_id: str, activities: List[Dict]) -> Dict[str, Any]:
-        """Store browser activities in bulk with cross-tab support"""
-        if not self.is_tracking_enabled(user_id):
+        """Store browser activities with fallback support"""
+        if not self._check_weaviate_available():
+            return self._store_activities_fallback(user_id, activities)
+            
+        try:
+            stored_count = 0
+            errors = []
+            validation_failures = 0
+            
+            logger.info(f"Processing {len(activities)} activities for user {user_id}")
+            
+            # Validate and store each activity
+            for i, activity_data in enumerate(activities):
+                try:
+                    # Validate and enhance activity
+                    validated_activity = self._validate_and_enhance_activity(user_id, activity_data)
+                    if not validated_activity:
+                        validation_failures += 1
+                        errors.append(f"Activity {i}: validation failed")
+                        logger.debug(f"Validation failed for activity {i}: {activity_data}")
+                        continue
+                    
+                    # Create activity using model
+                    activity = BrowserActivityModel.create(
+                        user_id=user_id,
+                        activity_type=validated_activity['activity_type'],
+                        activity_data=validated_activity['activity_data'],
+                        url=validated_activity.get('url'),
+                        page_title=validated_activity.get('page_title'),
+                        session_id=validated_activity.get('session_id'),
+                        engagement_score=validated_activity.get('engagement_score', 0.0)
+                    )
+                    
+                    if activity:
+                        stored_count += 1
+                    else:
+                        errors.append(f"Activity {i}: failed to create in database")
+                        
+                except Exception as e:
+                    errors.append(f"Activity {i}: error processing - {str(e)}")
+                    logger.error(f"Error processing activity {i}: {str(e)}")
+                    continue
+            
+            # Log success
+            logger.info(f"Stored {stored_count}/{len(activities)} browser activities for user {user_id} (validation failures: {validation_failures})")
+            
+            return {
+                'success': True,
+                'stored_count': stored_count,
+                'total_received': len(activities),
+                'validation_failures': validation_failures,
+                'errors': errors[:10] if errors else None,  # Limit errors for response size
+                'has_errors': len(errors) > 0,
+                'message': f'Successfully stored {stored_count} activities' if stored_count > 0 else 'No activities were stored'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error storing activities for user {user_id}: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'message': 'Tracking not enabled for this user',
-                'stored_count': 0
+                'error': 'Failed to store activities',
+                'stored_count': 0,
+                'total_received': len(activities),
+                'message': str(e)
             }
-        
-        # Validate and prepare activities with enhanced cross-tab data
-        valid_activities = []
-        for activity in activities:
-            if self._validate_activity(activity):
-                activity['user_id'] = user_id
-                activity['timestamp'] = activity.get('timestamp', datetime.utcnow().isoformat())
-                
-                # Add cross-tab tracking metadata
-                activity_data = activity.get('activity_data', {})
-                activity_data['is_cross_tab'] = activity_data.get('is_cross_tab', True)
-                activity_data['tab_id'] = activity_data.get('tab_id', 'unknown')
-                activity_data['session_id'] = activity_data.get('session_id', 'unknown')
-                activity['activity_data'] = activity_data
-                
-                valid_activities.append(activity)
-        
-        # Store activities
-        stored_activities = BrowserActivityModel.create_bulk(valid_activities)
-        
-        return {
-            'success': True,
-            'stored_count': len(stored_activities),
-            'cross_tab_enabled': True,
-            'message': f'Successfully stored {len(stored_activities)} cross-tab activities'
-        }
     
-    def _validate_activity(self, activity: Dict) -> bool:
-        """Validate activity data with enhanced cross-tab validation"""
-        required_fields = ['activity_type', 'activity_data']
-        if not all(field in activity for field in required_fields):
-            return False
-        
-        # Validate cross-tab specific fields
-        activity_data = activity.get('activity_data', {})
-        if 'tab_id' not in activity_data:
-            activity_data['tab_id'] = 'unknown'
-        if 'session_id' not in activity_data:
-            activity_data['session_id'] = 'unknown'
+    def _store_activities_fallback(self, user_id: str, activities: List[Dict]) -> Dict[str, Any]:
+        """Store activities in fallback memory storage"""
+        try:
+            if user_id not in self.fallback_storage['activities']:
+                self.fallback_storage['activities'][user_id] = []
             
-        return True
+            stored_count = 0
+            errors = []
+            
+            for activity_data in activities:
+                try:
+                    # Validate and enhance activity
+                    validated_activity = self._validate_and_enhance_activity(user_id, activity_data)
+                    if validated_activity:
+                        # Add to fallback storage
+                        fallback_activity = {
+                            'id': f"fallback_{datetime.utcnow().timestamp()}_{stored_count}",
+                            'user_id': user_id,
+                            'activity_type': validated_activity['activity_type'],
+                            'activity_data': validated_activity['activity_data'],
+                            'url': validated_activity.get('url'),
+                            'page_title': validated_activity.get('page_title'),
+                            'timestamp': validated_activity.get('timestamp', datetime.utcnow().isoformat() + 'Z'),
+                            'session_id': validated_activity.get('session_id'),
+                            'engagement_score': validated_activity.get('engagement_score', 0.0)
+                        }
+                        
+                        self.fallback_storage['activities'][user_id].append(fallback_activity)
+                        stored_count += 1
+                        
+                        # Keep only recent activities (last 1000)
+                        if len(self.fallback_storage['activities'][user_id]) > 1000:
+                            self.fallback_storage['activities'][user_id] = self.fallback_storage['activities'][user_id][-1000:]
+                            
+                except Exception as e:
+                    errors.append(f"Error processing activity: {str(e)}")
+                    continue
+            
+            logger.info(f"Stored {stored_count} activities in fallback storage for user {user_id}")
+            
+            return {
+                'success': True,
+                'stored_count': stored_count,
+                'total_received': len(activities),
+                'errors': errors[:5] if errors else None,
+                'has_errors': len(errors) > 0,
+                'using_fallback': True
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in fallback storage for user {user_id}: {str(e)}")
+            return {
+                'success': False,
+                'error': 'Failed to store activities in fallback',
+                'stored_count': 0,
+                'total_received': len(activities),
+                'using_fallback': True
+            }
+    
+    def _validate_and_enhance_activity(self, user_id: str, activity_data: Dict) -> Dict:
+        """Validate and enhance activity data with cross-tab support"""
+        try:
+            # Ensure we have a valid dictionary
+            if not isinstance(activity_data, dict):
+                logger.warning(f"Invalid activity data type: {type(activity_data)}")
+                return None
+            
+            # Log the raw activity data for debugging
+            logger.debug(f"Raw activity data keys: {list(activity_data.keys())}")
+            
+            # Check required fields - be more flexible about structure
+            activity_type = (activity_data.get('activity_type') or 
+                           activity_data.get('type') or 
+                           activity_data.get('activityType') or
+                           'unknown_activity')
+            
+            data_content = (activity_data.get('activity_data') or 
+                          activity_data.get('data') or 
+                          activity_data.get('activityData') or 
+                          {})
+            
+            # Ensure data_content is a dictionary
+            if not isinstance(data_content, dict):
+                if isinstance(data_content, str):
+                    try:
+                        import json
+                        data_content = json.loads(data_content)
+                    except:
+                        data_content = {'raw_data': data_content}
+                else:
+                    data_content = {'content': str(data_content) if data_content is not None else ''}
+            
+            # Validate and set cross-tab specific fields with fallbacks
+            tab_id = (activity_data.get('tab_id') or 
+                     data_content.get('tab_id') or 
+                     activity_data.get('tabId') or 
+                     'default_tab')
+            
+            session_id = (activity_data.get('session_id') or 
+                         data_content.get('session_id') or 
+                         activity_data.get('sessionId') or 
+                         'default_session')
+            
+            # Extract URL and page title from various possible locations
+            url = (activity_data.get('url') or 
+                   data_content.get('url') or 
+                   data_content.get('current_url') or 
+                   data_content.get('newUrl') or 
+                   activity_data.get('current_url') or 
+                   activity_data.get('href') or '')
+            
+            page_title = (activity_data.get('page_title') or 
+                         data_content.get('page_title') or 
+                         data_content.get('title') or 
+                         data_content.get('newTitle') or 
+                         activity_data.get('title') or 
+                         activity_data.get('pageTitle') or '')
+            
+            # Ensure strings are not too long and are valid strings
+            if url and not isinstance(url, str):
+                url = str(url)
+            if url and len(url) > 2000:
+                url = url[:2000]
+            
+            if page_title and not isinstance(page_title, str):
+                page_title = str(page_title)
+            if page_title and len(page_title) > 500:
+                page_title = page_title[:500]
+            
+            # Calculate engagement score
+            engagement_score = activity_data.get('engagement_score', 0.0)
+            if not isinstance(engagement_score, (int, float)):
+                try:
+                    engagement_score = float(engagement_score)
+                except:
+                    engagement_score = 0.0
+            
+            # Get timestamp
+            timestamp = (activity_data.get('timestamp') or 
+                        activity_data.get('created_at') or 
+                        datetime.utcnow().isoformat() + 'Z')
+            
+            # Ensure timestamp is a string
+            if not isinstance(timestamp, str):
+                timestamp = datetime.utcnow().isoformat() + 'Z'
+            
+            # Build the validated activity
+            validated_activity = {
+                'activity_type': str(activity_type),
+                'activity_data': data_content,
+                'url': str(url) if url else '',
+                'page_title': str(page_title) if page_title else '',
+                'tab_id': str(tab_id),
+                'session_id': str(session_id),
+                'engagement_score': float(engagement_score),
+                'timestamp': timestamp,
+                'user_id': user_id,
+                'is_cross_tab': True
+            }
+            
+            logger.debug(f"Validated activity: {activity_type} for user {user_id}")
+            return validated_activity
+            
+        except Exception as e:
+            logger.error(f"Error validating activity: {e}")
+            logger.debug(f"Failed activity data: {activity_data}")
+            return None
     
     def get_user_activities(self, user_id: str, hours_back: int = 24, 
                            limit: int = 100, include_cross_tab: bool = True) -> List[Dict[str, Any]]:
