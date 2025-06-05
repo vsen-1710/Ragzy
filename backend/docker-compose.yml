@@ -38,14 +38,13 @@ services:
   backend:
     build: .
     ports:
-      - "8080:5000"
+      - "5000:5000"
     environment:
       - FLASK_ENV=development
       - WEAVIATE_URL=http://weaviate:8080
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - REACT_APP_API_URL=http://ragzy.duckdns.org:8080
     volumes:
       - ./app:/app/app
       - ./run.py:/app/run.py

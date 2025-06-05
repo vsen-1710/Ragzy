@@ -58,7 +58,7 @@ def create_app(config_class=Config):
                      "http://127.0.0.1:3000",
                      "http://127.0.0.1:3001",
                      "https://ragzy.onrender.com",
-                     "http://ragzy.duckdns.org:8080"
+                     "http://ragzy.duckdns.org:5000"
                  ],
                  "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                  "allow_headers": ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With", "Accept", "Origin", "X-Force-Fast-Response", "X-No-Streaming"],
@@ -83,7 +83,7 @@ def create_app(config_class=Config):
             'http://127.0.0.1:3000',
             'http://127.0.0.1:3001',
             'https://ragzy.onrender.com',
-            'http://ragzy.duckdns.org:8080'
+            'http://ragzy.duckdns.org:5000'
         ]
         
         # Check if origin is valid
@@ -129,7 +129,7 @@ def create_app(config_class=Config):
                 'http://127.0.0.1:3000',
                 'http://127.0.0.1:3001',
                 'https://ragzy.onrender.com',
-                'http://ragzy.duckdns.org:8080'
+                'http://ragzy.duckdns.org:5000'
             ]
             
             # Check if origin is valid

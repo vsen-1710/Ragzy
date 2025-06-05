@@ -7,6 +7,7 @@ import os
 import uuid
 import hashlib
 import traceback
+import re
 from datetime import timedelta
 from ..models.user import UserModel
 
@@ -71,6 +72,19 @@ def create_error_response(error_message, status_code=500):
     response.headers['Content-Type'] = 'application/json'
     return add_cors_headers(response)
 
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+def validate_password(password):
+    """Validate password strength"""
+    if len(password) < 6:
+        return False, "Password must be at least 6 characters long"
+    if len(password) > 128:
+        return False, "Password must be less than 128 characters"
+    return True, ""
+
 def google_id_to_uuid(google_id: str) -> str:
     """Convert Google user ID to a deterministic UUID"""
     return str(uuid.uuid5(GOOGLE_UUID_NAMESPACE, f"google_user_{google_id}"))
@@ -125,6 +139,8 @@ def get_or_create_user(google_user_id, email, name):
             # Update existing user with UUID
             user.id = user_uuid
             user.google_id = google_user_id
+            user.auth_provider = 'google'
+            user.email_verified = True
             user.save()
         else:
             current_app.logger.info(f"Creating new user with UUID: {user_uuid}")
@@ -145,14 +161,19 @@ def get_or_create_user(google_user_id, email, name):
     
     return user
 
-def create_jwt_token(user, google_user_id, email, name, picture):
+def create_jwt_token(user, google_user_id=None, email=None, name=None, picture=None):
     """Create JWT token with user info"""
     additional_claims = {
-        'email': email,
-        'name': name,
-        'picture': picture,
-        'google_id': google_user_id
+        'email': email or user.email,
+        'name': name or user.username,
+        'auth_provider': user.auth_provider,
+        'email_verified': user.email_verified
     }
+    
+    if picture:
+        additional_claims['picture'] = picture
+    if google_user_id:
+        additional_claims['google_id'] = google_user_id
     
     return create_access_token(
         identity=str(user.id),
@@ -160,7 +181,7 @@ def create_jwt_token(user, google_user_id, email, name, picture):
         expires_delta=timedelta(days=JWT_EXPIRY_DAYS)
     )
 
-def create_success_response(access_token, user, picture):
+def create_success_response(access_token, user, picture=None):
     """Create success response with token and user info"""
     response_data = {
         'success': True,
@@ -169,9 +190,13 @@ def create_success_response(access_token, user, picture):
             'id': str(user.id),
             'email': user.email,
             'name': user.username,
-            'picture': picture
+            'auth_provider': user.auth_provider,
+            'email_verified': user.email_verified
         }
     }
+    
+    if picture:
+        response_data['user']['picture'] = picture
     
     response = make_response(jsonify(response_data), 200)
     response.headers['Content-Type'] = 'application/json'
@@ -188,6 +213,119 @@ def create_success_response(access_token, user, picture):
     )
     
     return add_cors_headers(response)
+
+@auth_bp.route('/signup', methods=['POST', 'OPTIONS'])
+def manual_signup():
+    """Manual signup with email and password"""
+    if request.method == 'OPTIONS':
+        response = make_response()
+        return add_cors_headers(response)
+        
+    try:
+        current_app.logger.info("Processing manual signup request")
+        data = request.get_json()
+        
+        if not data:
+            return create_error_response('Request data is required', 400)
+        
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+        name = data.get('name', '').strip()
+        
+        # Validate required fields
+        if not email or not password or not name:
+            return create_error_response('Email, password, and name are required', 400)
+        
+        # Validate email format
+        if not validate_email(email):
+            return create_error_response('Invalid email format', 400)
+        
+        # Validate password
+        is_valid_password, password_error = validate_password(password)
+        if not is_valid_password:
+            return create_error_response(password_error, 400)
+        
+        # Check if user already exists
+        existing_user = UserModel.get_by_email(email)
+        if existing_user:
+            return create_error_response('User with this email already exists', 409)
+        
+        # Create new user
+        user = UserModel.create(
+            username=name,
+            email=email,
+            password=password
+        )
+        
+        if not user:
+            return create_error_response('Failed to create user account', 500)
+        
+        # Generate JWT token
+        access_token = create_jwt_token(user)
+        
+        current_app.logger.info(f"Successfully created user: {user.id}")
+        return create_success_response(access_token, user)
+        
+    except Exception as e:
+        current_app.logger.error(f"Manual signup error: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return create_error_response('Signup failed. Please try again.', 500)
+
+@auth_bp.route('/login', methods=['POST', 'OPTIONS'])
+def manual_login():
+    """Manual login with email and password"""
+    if request.method == 'OPTIONS':
+        response = make_response()
+        return add_cors_headers(response)
+        
+    try:
+        current_app.logger.info("Processing manual login request")
+        data = request.get_json()
+        
+        if not data:
+            return create_error_response('Request data is required', 400)
+        
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+        
+        # Validate required fields
+        if not email or not password:
+            return create_error_response('Email and password are required', 400)
+        
+        # Validate email format
+        if not validate_email(email):
+            return create_error_response('Invalid email format', 400)
+        
+        # Find user by email
+        user = UserModel.get_by_email(email)
+        if not user:
+            return create_error_response('Invalid email or password', 401)
+        
+        # Check if user uses manual authentication
+        if user.auth_provider != 'manual':
+            if user.auth_provider == 'google':
+                return create_error_response('This account uses Google Sign-In. Please use the "Continue with Google" option.', 400)
+            else:
+                return create_error_response('This account uses a different authentication method', 400)
+        
+        # Verify password
+        if not user.check_password(password):
+            return create_error_response('Invalid email or password', 401)
+        
+        # Check if user is active
+        if not user.is_active:
+            return create_error_response('Account is disabled. Please contact support.', 403)
+        
+        # Generate JWT token
+        access_token = create_jwt_token(user)
+        
+        current_app.logger.info(f"Successfully logged in user: {user.id}")
+        return create_success_response(access_token, user)
+        
+    except Exception as e:
+        current_app.logger.error(f"Manual login error: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return create_error_response('Login failed. Please try again.', 500)
 
 @auth_bp.route('/google', methods=['POST', 'OPTIONS'])
 def google_auth():
