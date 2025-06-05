@@ -836,5 +836,107 @@ class RedisServiceOptimized:
             print(f"Error updating chat metadata: {str(e)}")
             return False
 
+    # User Profile Management Methods
+    @_with_error_handling("Store user profile")
+    def store_user_profile(self, user_id: str, profile_data: Dict[str, Any]) -> bool:
+        """Store user profile information for personalized responses"""
+        profile_key = self.get_user_key(user_id, "profile")
+        
+        # Enhance profile data with metadata
+        enhanced_profile = {
+            **profile_data,
+            'updated_at': datetime.utcnow().isoformat() + 'Z',
+            'version': '1.0'
+        }
+        
+        serialized_data = self._serialize_data(enhanced_profile)
+        return bool(self.redis.setex(profile_key, self.metadata_ttl, serialized_data))
+    
+    @_with_error_handling("Get user profile")
+    def get_user_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve user profile information"""
+        profile_key = self.get_user_key(user_id, "profile")
+        profile_data = self.redis.get(profile_key)
+        
+        if not profile_data:
+            return None
+        
+        profile = self._deserialize_data(profile_data)
+        if not profile or not isinstance(profile, dict):
+            return None
+        
+        # Remove internal metadata fields
+        return {k: v for k, v in profile.items() if not k.startswith('_') and k not in ['version']}
+    
+    @_with_error_handling("Update user profile field")
+    def update_user_profile_field(self, user_id: str, field: str, value: Any) -> bool:
+        """Update a specific field in user profile"""
+        # Get existing profile
+        profile = self.get_user_profile(user_id) or {}
+        
+        # Update the field
+        profile[field] = value
+        
+        # Store updated profile
+        return self.store_user_profile(user_id, profile)
+    
+    @_with_error_handling("Extract and store user information")
+    def extract_and_store_user_info(self, user_id: str, message_content: str) -> bool:
+        """Extract user information from conversation and store in profile"""
+        try:
+            import re
+            
+            # Extract name patterns
+            name_patterns = [
+                r'my name is ([a-zA-Z\s]+)',
+                r'i am ([a-zA-Z\s]+)',
+                r'i\'m ([a-zA-Z\s]+)',
+                r'call me ([a-zA-Z\s]+)',
+                r'name.*?is ([a-zA-Z\s]+)'
+            ]
+            
+            extracted_info = {}
+            content_lower = message_content.lower()
+            
+            # Extract names
+            for pattern in name_patterns:
+                match = re.search(pattern, content_lower)
+                if match:
+                    potential_name = match.group(1).strip().title()
+                    # Filter out common words that aren't names
+                    excluded_words = ['The', 'A', 'An', 'Is', 'Are', 'Was', 'Were', 'Good', 'Fine', 'Okay']
+                    if len(potential_name) > 1 and potential_name not in excluded_words:
+                        extracted_info['name'] = potential_name
+                        break
+            
+            # Extract profession/role patterns
+            profession_patterns = [
+                r'i work as ([a-zA-Z\s]+)',
+                r'i am a ([a-zA-Z\s]+)',
+                r'my job is ([a-zA-Z\s]+)',
+                r'profession.*?([a-zA-Z\s]+)',
+                r'i\'m a ([a-zA-Z\s]+)'
+            ]
+            
+            for pattern in profession_patterns:
+                match = re.search(pattern, content_lower)
+                if match:
+                    potential_profession = match.group(1).strip().title()
+                    if len(potential_profession) > 2:
+                        extracted_info['profession'] = potential_profession
+                        break
+            
+            # Store extracted information
+            if extracted_info:
+                for field, value in extracted_info.items():
+                    self.update_user_profile_field(user_id, field, value)
+                return True
+                
+            return False
+            
+        except Exception as e:
+            print(f"Error extracting user info: {str(e)}")
+            return False
+
 # Maintain backward compatibility
 RedisService = RedisServiceOptimized

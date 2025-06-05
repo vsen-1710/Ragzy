@@ -147,6 +147,18 @@ class WeaviateServiceOptimized:
                 }
             },
             {
+                "class": "UserMemory",
+                "description": "Persistent user memory for storing personal information across sessions",
+                "properties": [
+                    {"name": "user_id", "dataType": ["text"], "description": "User ID"},
+                    {"name": "memory_data", "dataType": ["text"], "description": "JSON string of memory data"},
+                    {"name": "source", "dataType": ["text"], "description": "Source of memory (chat, manual, etc.)"},
+                    {"name": "created_at", "dataType": ["date"], "description": "Creation timestamp"},
+                    {"name": "updated_at", "dataType": ["date"], "description": "Last update timestamp"}
+                ],
+                "vectorizer": "none"  # Disable vectorization for memory data
+            },
+            {
                 "class": "BrowserActivity",
                 "description": "Browser activity tracking data",
                 "properties": [

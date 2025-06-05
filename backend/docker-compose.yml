@@ -1,4 +1,3 @@
-
 services:
   weaviate:
     image: semitechnologies/weaviate:1.24.7
@@ -21,7 +20,8 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --activedefrag yes --lazyfree-lazy-eviction yes --lazyfree-lazy-expire yes --lazyfree-lazy-server-del yes --io-threads 4 --io-threads-do-reads yes
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
     sysctls:
       - net.core.somaxconn=65535
     ulimits:
@@ -34,6 +34,24 @@ services:
       timeout: 5s
       retries: 3
     restart: unless-stopped
+    environment:
+      - REDIS_NODE_ID=node1
+      - REDIS_CLUSTER_ENABLED=no  # Set to yes for cluster mode
+      - REDIS_PERSISTENCE_ENABLED=yes
+
+  # Redis Sentinel for high availability (optional)
+  redis-sentinel:
+    image: redis:7-alpine
+    ports:
+      - "26379:26379"
+    volumes:
+      - ./sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    depends_on:
+      - redis
+    restart: unless-stopped
+    profiles:
+      - ha  # Only start with docker-compose --profile ha up
 
   backend:
     build: .

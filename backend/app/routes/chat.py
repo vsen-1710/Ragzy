@@ -709,26 +709,149 @@ def bulk_delete_conversations():
 @jwt_required()
 @handle_errors
 def upload_file():
-    """Upload a file and process it for vision capabilities"""
+    """Upload a file and add it to a conversation"""
     if 'file' not in request.files:
-        raise ValueError('No file part')
+        raise ValueError('No file uploaded')
     
     file = request.files['file']
-    if not file or not allowed_file(file.filename):
-        raise ValueError('Invalid file or file extension')
+    conversation_id = request.form.get('conversation_id')
+    
+    if not conversation_id:
+        raise ValueError('Conversation ID is required')
+    
+    if file.filename == '':
+        raise ValueError('No file selected')
+    
+    if not allowed_file(file.filename):
+        raise ValueError('File type not allowed')
     
     if get_file_size(file) > MAX_FILE_SIZE:
-        raise ValueError('File size exceeds the allowed limit')
+        raise ValueError('File size exceeds limit')
     
-    filename = secure_filename(file.filename)
-    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    try:
+        processed_file = chat_service.process_file(file)
+        if not processed_file:
+            raise ValueError('Failed to process file')
+        
+        return jsonify({
+            'success': True,
+            'message': 'File uploaded and processed successfully',
+            'file_path': processed_file
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error processing file: {str(e)}")
+        raise ValueError(f'Error processing file: {str(e)}')
+
+# User Profile Routes
+@chat_bp.route('/user/profile', methods=['POST'])
+@jwt_required()
+@handle_errors
+def store_user_profile():
+    """Store user profile information"""
+    user_id = get_user_id()
+    data = request.get_json()
     
-    file.save(file_path)
+    if not data:
+        raise ValueError('No profile data provided')
     
-    # Process the file for vision capabilities
-    processed_file = chat_service.process_file(file_path)
+    from app.services.redis_service import RedisServiceOptimized as RedisService
+    redis_service = RedisService()
+    
+    success = redis_service.store_user_profile(user_id, data)
+    
+    return jsonify({
+        'success': success,
+        'message': 'Profile stored successfully' if success else 'Failed to store profile'
+    })
+
+@chat_bp.route('/user/profile', methods=['GET'])
+@jwt_required()
+@handle_errors
+def get_user_profile():
+    """Get user profile information"""
+    user_id = get_user_id()
+    
+    from app.services.redis_service import RedisServiceOptimized as RedisService
+    redis_service = RedisService()
+    
+    profile = redis_service.get_user_profile(user_id)
     
     return jsonify({
         'success': True,
-        'file_path': processed_file
+        'profile': profile or {}
     })
+
+@chat_bp.route('/analyze-activity', methods=['POST'])
+@jwt_required()
+@handle_errors
+def analyze_browser_activity():
+    """Analyze user's browser activity using AI with user profile awareness"""
+    data = request.get_json()
+    if not data:
+        raise ValueError('No data provided')
+    
+    user_id = get_user_id()
+    activities = data.get('activities', [])
+    user_query = data.get('user_query', 'Analyze my browser activity')
+    
+    try:
+        # Get user profile for personalized analysis
+        from app.services.redis_service import RedisServiceOptimized as RedisService
+        redis_service = RedisService()
+        user_profile = redis_service.get_user_profile(user_id) or {}
+        
+        # Create or get a conversation for activity analysis
+        analysis_conversation = chat_service.create_conversation(
+            user_id, 
+            title="Browser Activity Analysis"
+        )
+        
+        if not analysis_conversation:
+            raise ValueError('Failed to create analysis conversation')
+        
+        # Prepare activity context
+        activity_summary = ""
+        if activities:
+            search_activities = [a for a in activities if a.get('type') in ['search_simulation', 'search']]
+            if search_activities:
+                queries = [a.get('query', 'Unknown') for a in search_activities]
+                activity_summary = f"Recent searches: {', '.join(queries[:5])}"
+            else:
+                activity_summary = f"Browser activity recorded: {len(activities)} activities"
+        else:
+            activity_summary = "No recent browser activity found"
+        
+        # Enhanced user query with profile and activity context
+        enhanced_query = user_query
+        if user_profile.get('name'):
+            enhanced_query = f"Hello {user_profile['name']}! " + user_query
+        
+        if activity_summary:
+            enhanced_query += f"\n\nActivity context: {activity_summary}"
+        
+        # Generate AI response
+        ai_response = chat_service.generate_response(
+            analysis_conversation.id, 
+            enhanced_query
+        )
+        
+        if ai_response and ai_response.content:
+            return jsonify({
+                'success': True,
+                'analysis': ai_response.content,
+                'conversation_id': analysis_conversation.id
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'analysis': 'I understand you want me to analyze your browser activity. However, I don\'t see enough data to provide meaningful insights at this time. Please try using the browser tracker for a while and then ask again.',
+                'conversation_id': analysis_conversation.id
+            })
+            
+    except Exception as e:
+        current_app.logger.error(f"Error analyzing browser activity: {str(e)}")
+        return jsonify({
+            'success': False,
+            'analysis': 'I apologize, but I encountered an error while analyzing your browser activity. Please try again later.',
+            'error': str(e)
+        }), 500

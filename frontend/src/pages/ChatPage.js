@@ -89,9 +89,20 @@ function ChatPage() {
   const [error, setError] = useState(null);
   const [conversationId, setConversationId] = useState(() => getInitialConversationId());
   
-  // Browser tracking state
+  // Browser tracking state - initialize from localStorage if available
   const [showBrowserTrackingHistory, setShowBrowserTrackingHistory] = useState(false);
-  const [isBrowserTrackingEnabled, setIsBrowserTrackingEnabled] = useState(false);
+  const [isBrowserTrackingEnabled, setIsBrowserTrackingEnabled] = useState(() => {
+    try {
+      // Check the global localStorage key first
+      const globalPref = localStorage.getItem('browser_tracking_enabled');
+      if (globalPref !== null) {
+        return globalPref === 'true';
+      }
+      return false; // Default to disabled
+    } catch (error) {
+      return false;
+    }
+  });
   
   // Recovery state for mid-response persistence
   const [currentRequestId, setCurrentRequestId] = useState(null);
@@ -1392,6 +1403,9 @@ function ChatPage() {
       console.log(`Toggling browser tracking: ${enabled}`);
       setIsBrowserTrackingEnabled(enabled);
       
+      // Update the global localStorage key immediately for persistence across sessions
+      localStorage.setItem('browser_tracking_enabled', enabled.toString());
+      
       // Update the tracker directly
       if (browserTracker.current) {
         if (enabled) {
@@ -1426,6 +1440,7 @@ function ChatPage() {
       console.error('Failed to toggle browser tracking:', error);
       // Revert state on error
       setIsBrowserTrackingEnabled(!enabled);
+      localStorage.setItem('browser_tracking_enabled', (!enabled).toString());
     }
   }, [getAuthHeaders, syncActivitiesWithBackend]);
   
@@ -1453,12 +1468,22 @@ function ChatPage() {
       if (!user?.id || !browserTracker.current) return;
       
       try {
-        // Get the user's stored preference (this is the source of truth)
-        const localTrackingState = browserTracker.current.isTrackingEnabled();
-        console.log(`🔧 User's stored tracking preference: ${localTrackingState}`);
+        // Get the user's stored preference from localStorage (source of truth)
+        const globalPref = localStorage.getItem('browser_tracking_enabled');
+        const localTrackingState = globalPref !== null ? globalPref === 'true' : browserTracker.current.isTrackingEnabled();
         
-        // Always respect the user's local preference - never override it
-        setIsBrowserTrackingEnabled(localTrackingState);
+        console.log(`🔧 User's stored tracking preference: ${localTrackingState} (global: ${globalPref})`);
+        
+        // Ensure React state is synced with localStorage
+        if (isBrowserTrackingEnabled !== localTrackingState) {
+          console.log(`🔄 Syncing React state ${isBrowserTrackingEnabled} -> ${localTrackingState}`);
+          setIsBrowserTrackingEnabled(localTrackingState);
+        }
+        
+        // Update global localStorage key if it doesn't exist
+        if (globalPref === null) {
+          localStorage.setItem('browser_tracking_enabled', localTrackingState.toString());
+        }
         
         // Only start tracking if user has explicitly enabled it AND it's not already tracking
         if (localTrackingState && !browserTracker.current.isTracking) {
@@ -1490,6 +1515,7 @@ function ChatPage() {
         console.error('🚨 Error in tracking initialization:', error);
         // On any error, default to disabled for privacy
         setIsBrowserTrackingEnabled(false);
+        localStorage.setItem('browser_tracking_enabled', 'false');
         browserTracker.current?.stopTracking();
       }
     };
@@ -1498,7 +1524,7 @@ function ChatPage() {
     if (user?.id && browserTracker.current) {
       initializeBrowserTracking();
     }
-  }, [user?.id, getAuthHeaders, syncActivitiesWithBackend]);
+  }, [user?.id, getAuthHeaders, syncActivitiesWithBackend, isBrowserTrackingEnabled]);
 
   // Auto-sync activities periodically when tracking is enabled
   useEffect(() => {
@@ -1510,6 +1536,31 @@ function ChatPage() {
     
     return () => clearInterval(syncInterval);
   }, [isBrowserTrackingEnabled, syncActivitiesWithBackend]);
+
+  // Listen for localStorage changes to keep state in sync across tabs
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'browser_tracking_enabled' && e.newValue !== null) {
+        const newState = e.newValue === 'true';
+        if (newState !== isBrowserTrackingEnabled) {
+          console.log(`📡 Cross-tab sync: tracking state changed to ${newState}`);
+          setIsBrowserTrackingEnabled(newState);
+          
+          // Update browser tracker accordingly
+          if (browserTracker.current) {
+            if (newState) {
+              browserTracker.current.enableTracking();
+            } else {
+              browserTracker.current.disableTracking();
+            }
+          }
+        }
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [isBrowserTrackingEnabled]);
 
   // Enhanced keyboard shortcuts
   useEffect(() => {

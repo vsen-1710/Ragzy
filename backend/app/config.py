@@ -13,12 +13,15 @@ class Config:
     JWT_HEADER_NAME = "Authorization"
     JWT_HEADER_TYPE = "Bearer"
     
-    # Weaviate configuration
-    WEAVIATE_URL = os.environ.get("WEAVIATE_URL", "http://weaviate:8080")
+    # Weaviate configuration - check if we're in Docker or local
+    WEAVIATE_URL = os.environ.get("WEAVIATE_URL", "http://localhost:8080")
     WEAVIATE_API_KEY = os.environ.get("WEAVIATE_API_KEY")  # Optional for local setup
     
-    # Redis configuration
-    REDIS_URL = f"redis://{os.environ.get('REDIS_HOST', 'redis')}:{os.environ.get('REDIS_PORT', '6379')}/{os.environ.get('REDIS_DB', '0')}"
+    # Redis configuration - support both Docker and local development
+    REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
+    REDIS_PORT = os.environ.get('REDIS_PORT', '6379')
+    REDIS_DB = os.environ.get('REDIS_DB', '0')
+    REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
     
     # OpenAI configuration
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")

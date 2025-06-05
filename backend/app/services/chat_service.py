@@ -16,6 +16,7 @@ from app.services.openai_service import OpenAIServiceOptimized as OpenAIService
 from app.services.redis_service import RedisServiceOptimized as RedisService
 from app.services.weaviate_service import weaviate_service
 from app.services.browser_tracking_service import browser_tracking_service
+from app.services.memory_service import memory_service
 from app.models.user import UserModel
 
 logger = logging.getLogger(__name__)
@@ -811,6 +812,9 @@ class ChatServiceOptimized:
             # Clean and process the message
             title = message.strip()
             
+            # Remove any remaining bracket formatting that might have been missed
+            title = re.sub(r'\[.*?\]', '', title).strip()
+            
             # Remove markdown, code blocks, and special characters
             title = title.replace('```', '').replace('`', '')
             title = title.replace('*', '').replace('_', '').replace('#', '')
@@ -821,6 +825,11 @@ class ChatServiceOptimized:
             
             # Replace multiple spaces with single space
             title = re.sub(r'\s+', ' ', title).strip()
+            
+            # If the message is very short, just use it as is
+            if len(title) <= 50:
+                # Capitalize first letter and return
+                return title[0].upper() + title[1:] if len(title) > 1 else title.upper()
             
             # Extract meaningful part - take first question or statement
             sentences = title.split('. ')
@@ -842,11 +851,15 @@ class ChatServiceOptimized:
                 title = title[:50] + '...' if len(title) > 50 else title
             
             # Ensure minimum length
-            if len(title) < 5:
-                title = "New Conversation"
+            if len(title) < 3:
+                return "New Conversation"
             
             # Capitalize first letter
             title = title[0].upper() + title[1:] if len(title) > 1 else title.upper()
+            
+            # Remove trailing ellipsis if the title is naturally complete
+            if title.endswith('...') and '?' in title[:-3]:
+                title = title[:-3]
             
             return title
             
@@ -868,7 +881,7 @@ class ChatServiceOptimized:
             clean_user_message = user_message
             
             # Parse browser context from message if present
-            if '[SEARCH CONTEXT]:' in user_message:
+            if '[SEARCH CONTEXT]:' in user_message or '[USER MESSAGE]:' in user_message:
                 try:
                     # Extract search context
                     import re
@@ -886,15 +899,52 @@ class ChatServiceOptimized:
                         if recent_searches_match:
                             search_context['recent_searches'] = [s.strip() for s in recent_searches_match.group(1).split(',')]
                     
-                    # Extract the actual user message
-                    user_msg_match = re.search(r'\[USER MESSAGE\]: ([^\n]+)', user_message)
+                    # Extract the actual user message - this is the key fix!
+                    user_msg_match = re.search(r'\[USER MESSAGE\]: ([^\[]+?)(?:\s*\[|$)', user_message)
                     if user_msg_match:
-                        clean_user_message = user_msg_match.group(1)
+                        clean_user_message = user_msg_match.group(1).strip()
+                        logger.info(f"Extracted clean user message: '{clean_user_message}' from: '{user_message[:100]}...'")
+                    
+                    # If no clean message found, try to extract from start of message
+                    if not clean_user_message or clean_user_message == user_message:
+                        # Look for plain text at the beginning
+                        lines = user_message.split('\n')
+                        for line in lines:
+                            if not line.startswith('[') and line.strip():
+                                clean_user_message = line.strip()
+                                break
                         
-                    logger.info(f"Extracted search context: {search_context}")
+                        # If still nothing found, use the first non-empty part
+                        if not clean_user_message:
+                            clean_user_message = user_message.split('[')[0].strip() or "Hi"
+                        
+                    logger.info(f"Final clean user message: '{clean_user_message}'")
                     
                 except Exception as e:
                     logger.warning(f"Error parsing browser context: {str(e)}")
+                    # Fallback: try to extract from [USER MESSAGE]: pattern
+                    import re
+                    fallback_match = re.search(r'\[USER MESSAGE\]:\s*([^\n\[]+)', user_message)
+                    if fallback_match:
+                        clean_user_message = fallback_match.group(1).strip()
+                    else:
+                        clean_user_message = "Hi"  # Safe fallback
+            
+            # Get user profile for personalized responses
+            user_profile = self.redis_service.get_user_profile(conversation.user_id) or {}
+            
+            # Extract user information from the message and store it
+            self.redis_service.extract_and_store_user_info(conversation.user_id, clean_user_message)
+            
+            # Process message for memory extraction and storage
+            extracted_memory, memory_stored = memory_service.process_message_for_memory(
+                conversation.user_id, clean_user_message
+            )
+            
+            # Get memory context for response generation
+            memory_context = memory_service.get_context_for_response(
+                conversation.user_id, clean_user_message
+            )
             
             # Add user message first using hierarchy-aware storage
             user_msg = self.add_message(conversation_id, 'user', clean_user_message)
@@ -909,7 +959,7 @@ class ChatServiceOptimized:
                 include_search_context=bool(search_context)
             )
             
-            # Enhanced system message with search context awareness
+            # Enhanced system message with search context awareness and user profile
             system_content = (
                 "You are Ragzy, a helpful AI assistant with access to comprehensive conversation history and user's browser search context. "
                 "Follow these guidelines strictly:\n"
@@ -920,7 +970,25 @@ class ChatServiceOptimized:
                 "4. Maintain continuity across conversation threads\n"
                 "5. Be friendly, helpful, and conversational like ChatGPT\n"
                 "6. If you see search context, prioritize that information in your response\n"
+                "7. Address users by their name when known and respond in a personalized manner\n"
+                "8. Use stored memory information to provide personalized, contextual responses\n"
+                "9. When users ask 'What's my name?' or 'What do you remember about me?', use the memory context\n"
             )
+            
+            # Add memory context to system message
+            if memory_context:
+                system_content += f"\n\nMEMORY CONTEXT:\n{memory_context}\n"
+                if extracted_memory:
+                    system_content += "Note: I just learned new information about you from your message.\n"
+            
+            # Add user profile information to system message
+            if user_profile:
+                system_content += f"\n\nUSER PROFILE:\n"
+                if user_profile.get('name'):
+                    system_content += f"- User's name: {user_profile['name']}\n"
+                if user_profile.get('profession'):
+                    system_content += f"- Profession: {user_profile['profession']}\n"
+                system_content += "Always address the user by their name and provide personalized responses based on their profile.\n"
             
             # Add search context to system message if available
             if search_context:
@@ -964,7 +1032,9 @@ class ChatServiceOptimized:
                 if search_context and search_context.get('query'):
                     ai_response = f"I'd be happy to help you with '{search_context['query']}'. Could you provide more specific details about what you're looking for?"
                 else:
-                    ai_response = "I apologize, but I'm having trouble responding right now. Please try again."
+                    user_name = user_profile.get('name', '')
+                    greeting = f"Hello {user_name}! " if user_name else "Hello! "
+                    ai_response = greeting + "I apologize, but I'm having trouble responding right now. Please try again."
             
             # Add AI response using hierarchy-aware storage
             assistant_msg = self.add_message(conversation_id, 'assistant', ai_response)
@@ -974,10 +1044,20 @@ class ChatServiceOptimized:
                 conversation.title.startswith('Sub-chat of') or
                 len(conversation.title.strip()) == 0):
                 
-                # Generate meaningful title from first user message with context awareness
-                title_message = search_context.get('query', clean_user_message) if search_context else clean_user_message
-                generated_title = self._generate_contextual_chat_title(title_message, context_messages)
-                if generated_title != "New Conversation":
+                # Generate meaningful title from CLEAN user message only
+                # Use the clean_user_message which has all browser context stripped
+                title_message = clean_user_message
+                
+                # For search context, prefer the original search query for better titles
+                if search_context and search_context.get('query'):
+                    # Use search query as it's usually more descriptive
+                    title_message = search_context['query']
+                
+                # Generate the title using only the clean message
+                generated_title = self._generate_chat_title_from_message(title_message)
+                
+                # Ensure the title is meaningful and not a default
+                if generated_title and generated_title not in ["New Conversation", "New Chat"]:
                     conversation.title = generated_title
                     conversation.save()
                     
@@ -993,6 +1073,8 @@ class ChatServiceOptimized:
                         'updated_at': conversation.updated_at or conversation.created_at
                     }
                     self.redis_service.cache_conversation_metadata(conversation.id, metadata)
+                    
+                    logger.info(f"Generated chat title: '{generated_title}' from clean message: '{title_message[:50]}...'")
             
             logger.info(f"Generated response for conversation {conversation_id} with search context: {bool(search_context)}")
             return assistant_msg

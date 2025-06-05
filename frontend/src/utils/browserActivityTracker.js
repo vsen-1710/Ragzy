@@ -88,8 +88,51 @@ class BrowserActivityTracker {
         lastUpdated: new Date().toISOString()
       };
       localStorage.setItem(this.settingsKey, JSON.stringify(settings));
+      
+      // Also save with a global key for easier access
+      localStorage.setItem('browser_tracking_enabled', this.isEnabled.toString());
+      
+      console.log(`💾 Saved tracking settings: ${JSON.stringify(settings)}`);
     } catch (error) {
       console.error('Error saving tracking settings:', error);
+    }
+  }
+
+  /**
+   * Get tracking preference from localStorage without instantiating the class
+   */
+  static getTrackingPreference(userId) {
+    try {
+      // First try the global key
+      const globalPref = localStorage.getItem('browser_tracking_enabled');
+      if (globalPref !== null) {
+        return globalPref === 'true';
+      }
+      
+      // Fallback to user-specific key
+      const settingsKey = `browserTracker_${userId}_settings`;
+      const settings = localStorage.getItem(settingsKey);
+      if (settings) {
+        const parsed = JSON.parse(settings);
+        return parsed.isEnabled === true;
+      }
+      
+      return false; // Default to disabled
+    } catch (error) {
+      console.error('Error getting tracking preference:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Set tracking preference in localStorage without instantiating the class
+   */
+  static setTrackingPreference(enabled) {
+    try {
+      localStorage.setItem('browser_tracking_enabled', enabled.toString());
+      console.log(`🔧 Set global tracking preference: ${enabled}`);
+    } catch (error) {
+      console.error('Error setting tracking preference:', error);
     }
   }
 

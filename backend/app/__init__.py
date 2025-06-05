@@ -180,10 +180,12 @@ def create_app(config_class=Config):
     from app.routes.chat import chat_bp
     from app.routes.auth import auth_bp
     from app.routes.browser_tracking import browser_tracking_bp
+    from app.routes.memory import memory_bp
     
     app.register_blueprint(chat_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(browser_tracking_bp)
+    app.register_blueprint(memory_bp)
     
     # Initialize Weaviate schemas within application context
     with app.app_context():

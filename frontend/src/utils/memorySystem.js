@@ -479,15 +479,56 @@ export class MemorySystem {
     const userMessages = messages.filter(m => m.role === 'user');
     if (userMessages.length === 0) return 'New Conversation';
 
-    const firstMessage = userMessages[0].content;
+    let firstMessage = userMessages[0].content;
     
-    // Extract key topics/questions
-    const words = firstMessage.split(' ').filter(word => word.length > 3);
-    const title = words.slice(0, 4).join(' ');
+    // Clean the message by removing browser context formatting
+    // Remove anything in square brackets like [USER MESSAGE]: or [BROWSER CONTEXT]:
+    firstMessage = firstMessage.replace(/\[.*?\]:\s*/g, '');
+    firstMessage = firstMessage.replace(/\[.*?\]/g, '');
+    
+    // Remove common browser tracking patterns
+    firstMessage = firstMessage.replace(/🧠\s*\[AI CONTEXT\]:.*?\n\n/gs, '');
+    firstMessage = firstMessage.replace(/🌐\s*\[BROWSER CONTEXT\]:.*?\n\n/gs, '');
+    firstMessage = firstMessage.replace(/\[INSTRUCTIONS\]:.*$/s, '');
+    
+    // Remove markdown and special characters
+    firstMessage = firstMessage.replace(/```[\s\S]*?```/g, '');
+    firstMessage = firstMessage.replace(/`[^`]*`/g, '');
+    firstMessage = firstMessage.replace(/[*_#]/g, '');
+    
+    // Remove URLs
+    firstMessage = firstMessage.replace(/https?:\/\/[^\s]+/g, '');
+    
+    // Clean up whitespace
+    firstMessage = firstMessage.replace(/\s+/g, ' ').trim();
+    
+    // If nothing left after cleaning, return default
+    if (!firstMessage || firstMessage.length < 3) {
+      return 'New Conversation';
+    }
+    
+    // Extract key topics/questions - focus on meaningful words
+    const words = firstMessage.split(' ')
+      .filter(word => word.length > 2)
+      .filter(word => !/^(the|and|but|for|are|you|can|how|what|when|where|why|which|this|that|with|from|they|have|will|been|were|said|each|she|him|her|his|has|had|did|get|may|new|now|way|use|man|day|too|any|may|say|she|two|how|its|our|out|who|oil|sit|set|run|eat|far|sea|eye|try|ask|car|big|end|put|ago|own|old|off|cut|win|yes|yet|nor|let|one|see|all|low|buy|few|now|top|raw|got|pro|six|ten|hot|fix|add|mix|hit|fit|kid|lay|net|sun|run|fun|fly|guy|sky|dry|shy|cry|fry|spy|buy|key|pay)$/i);
+    
+    // Take first 4-6 meaningful words depending on length
+    const titleWords = words.slice(0, firstMessage.length > 30 ? 4 : 6);
+    const title = titleWords.join(' ');
+    
+    // Ensure we have a reasonable title
+    if (title.length < 3) {
+      // Try to extract just the first sentence or phrase
+      const sentences = firstMessage.split(/[.!?]+/);
+      const firstSentence = sentences[0].trim();
+      return firstSentence.length > 50 ? 
+        firstSentence.substring(0, 47) + '...' : 
+        (firstSentence || 'New Conversation');
+    }
     
     return title.length > 50 ? 
       title.substring(0, 47) + '...' : 
-      title || 'New Conversation';
+      title;
   }
 
   /**
